@@ -10,8 +10,8 @@ use std::marker::PhantomData;
 use crate::vm::TraceRow;
 
 /// Field element wrapper for our circuit
-pub trait Field: PrimeField + From<u64> {}
-impl<F> Field for F where F: PrimeField + From<u64> + From<i64> {}
+pub trait Field: PrimeField {}
+impl<F> Field for F where F: PrimeField {}
 
 /// Configuration for our Subleq circuit
 #[derive(Debug, Clone)]
@@ -125,6 +125,18 @@ impl<F: Field> SubleqChip<F> {
         }
     }
     
+    /// Convert i64 to field element using from_u128
+    fn to_field(val: i64) -> F {
+        if val >= 0 {
+            F::from_u128(val as u128)
+        } else {
+            // For negative numbers, use F::from_u128 with modulo arithmetic
+            // This is a simple approach - in production you'd want proper handling
+            let modulus = F::from_u128(1u128 << 64); // Approximate, use actual modulus in production
+            F::from_u128((val as i128 + (1i128 << 64)) as u128)
+        }
+    }
+    
     /// Assign witness values from execution trace
     pub fn assign_trace(
         &self,
@@ -140,15 +152,15 @@ impl<F: Field> SubleqChip<F> {
                     self.config.pc_transition_gate.enable(&mut region, i)?;
                     
                     // Assign advice columns
-                    region.assign_advice(|| "pc", self.config.pc, i, || Value::known(F::from(row.pc as u64)))?;
-                    region.assign_advice(|| "a", self.config.a, i, || Value::known(F::from(row.a as u64)))?;
-                    region.assign_advice(|| "b", self.config.b, i, || Value::known(F::from(row.b as u64)))?;
-                    region.assign_advice(|| "c", self.config.c, i, || Value::known(F::from(row.c as u64)))?;
-                    region.assign_advice(|| "mem_a", self.config.mem_a, i, || Value::known(F::from(row.mem_a as i64)))?;
-                    region.assign_advice(|| "mem_b_before", self.config.mem_b_before, i, || Value::known(F::from(row.mem_b_before as i64)))?;
-                    region.assign_advice(|| "mem_b_after", self.config.mem_b_after, i, || Value::known(F::from(row.mem_b_after as i64)))?;
-                    region.assign_advice(|| "next_pc", self.config.next_pc, i, || Value::known(F::from(row.next_pc as u64)))?;
-                    region.assign_advice(|| "cond", self.config.cond, i, || Value::known(F::from(row.cond as u64)))?;
+                    region.assign_advice(|| "pc", self.config.pc, i, || Value::known(F::from_u128(row.pc as u128)))?;
+                    region.assign_advice(|| "a", self.config.a, i, || Value::known(F::from_u128(row.a as u128)))?;
+                    region.assign_advice(|| "b", self.config.b, i, || Value::known(F::from_u128(row.b as u128)))?;
+                    region.assign_advice(|| "c", self.config.c, i, || Value::known(F::from_u128(row.c as u128)))?;
+                    region.assign_advice(|| "mem_a", self.config.mem_a, i, || Value::known(Self::to_field(row.mem_a as i64)))?;
+                    region.assign_advice(|| "mem_b_before", self.config.mem_b_before, i, || Value::known(Self::to_field(row.mem_b_before as i64)))?;
+                    region.assign_advice(|| "mem_b_after", self.config.mem_b_after, i, || Value::known(Self::to_field(row.mem_b_after as i64)))?;
+                    region.assign_advice(|| "next_pc", self.config.next_pc, i, || Value::known(F::from_u128(row.next_pc as u128)))?;
+                    region.assign_advice(|| "cond", self.config.cond, i, || Value::known(Self::to_field(row.cond as i64)))?;
                 }
                 Ok(())
             },

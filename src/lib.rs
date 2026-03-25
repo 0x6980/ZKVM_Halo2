@@ -38,9 +38,9 @@ impl<F: Field> Circuit<F> for SubleqCircuit<F> {
         let a = meta.advice_column();
         let b = meta.advice_column();
         let c = meta.advice_column();
-        let mem_a_before = meta.advice_column();
+        let mem_a = meta.advice_column();
         let mem_b_before = meta.advice_column();
-        let mem_a_after = meta.advice_column();
+        let mem_b_after = meta.advice_column();
         let next_pc = meta.advice_column();
         let cond = meta.advice_column();
         
@@ -53,7 +53,9 @@ impl<F: Field> Circuit<F> for SubleqCircuit<F> {
         SubleqChip::configure(
             meta,
             pc, a, b, c,
-            mem_a_before, mem_b_before, mem_a_after,
+            mem_a, 
+            mem_b_before, 
+            mem_b_after,
             next_pc, cond,
             instance, constants,
         )
@@ -81,9 +83,8 @@ mod tests {
     use crate::vm::{SubleqVM, Instruction};
     use halo2_proofs::{dev::MockProver, halo2curves::pasta::Fp};
     
-    
     type TestField = Fp;
-    
+        
     #[test]
     fn test_simple_circuit() {
         // Create a simple program: R0 = R0 - R1
