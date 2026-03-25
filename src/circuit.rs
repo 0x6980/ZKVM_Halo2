@@ -101,27 +101,27 @@ impl<F: Field> SubleqChip<F> {
             let cond = meta.query_advice(cond, Rotation::cur());
             let next_pc = meta.query_advice(next_pc, Rotation::cur());
             
-            let one = Expression::Constant(F::from(1u64));
-            let pc_plus_one = pc + one.clone();
-            let expected_next_pc = cond.clone() * c + (one.clone() - cond) * pc_plus_one;
+            let one = Expression::Constant(F::ONE);
+            // next_pc = pc + 1 + cond * (c - pc - 1)
+            let expected_next_pc = pc.clone() + one.clone() + cond.clone() * (c - pc.clone() - one.clone());
             
             vec![s * (next_pc - expected_next_pc)]
         });
         
         SubleqConfig {
-            pc,
-            a,
-            b,
-            c,
-            mem_a,
-            mem_b_before,
-            mem_b_after,
-            next_pc,
-            cond,
-            instance,
-            constants,
-            subleq_gate,
-            pc_transition_gate,
+            pc: pc,
+            a: a,
+            b: b,
+            c: c,
+            mem_a: mem_a,
+            mem_b_before: mem_b_before,
+            mem_b_after: mem_b_after,
+            next_pc: next_pc,
+            cond: cond,
+            instance: instance,
+            constants: constants,
+            subleq_gate: subleq_gate,
+            pc_transition_gate: pc_transition_gate,
         }
     }
     
@@ -130,10 +130,14 @@ impl<F: Field> SubleqChip<F> {
         if val >= 0 {
             F::from_u128(val as u128)
         } else {
-            // For negative numbers, use F::from_u128 with modulo arithmetic
-            // This is a simple approach - in production you'd want proper handling
-            let modulus = F::from_u128(1u128 << 64); // Approximate, use actual modulus in production
-            F::from_u128((val as i128 + (1i128 << 64)) as u128)
+            // // For negative numbers, use F::from_u128 with modulo arithmetic
+            // // This is a simple approach - in production you'd want proper handling
+            // let modulus = F::from_u128(1u128 << 64); // Approximate, use actual modulus in production
+            // F::from_u128((val as i128 + (1i128 << 64)) as u128)
+
+            // Converting to u128 and then to field element works because
+            // PrimeField::from_u128 will reduce modulo the field characteristic
+            F::from_u128(val as u128)
         }
     }
     
@@ -160,7 +164,7 @@ impl<F: Field> SubleqChip<F> {
                     region.assign_advice(|| "mem_b_before", self.config.mem_b_before, i, || Value::known(Self::to_field(row.mem_b_before as i64)))?;
                     region.assign_advice(|| "mem_b_after", self.config.mem_b_after, i, || Value::known(Self::to_field(row.mem_b_after as i64)))?;
                     region.assign_advice(|| "next_pc", self.config.next_pc, i, || Value::known(F::from_u128(row.next_pc as u128)))?;
-                    region.assign_advice(|| "cond", self.config.cond, i, || Value::known(Self::to_field(row.cond as i64)))?;
+                    region.assign_advice(|| "cond", self.config.cond, i, || Value::known(F::from_u128(row.cond as u128)))?;
                 }
                 Ok(())
             },
