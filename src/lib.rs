@@ -136,12 +136,10 @@ mod tests {
         
         let trace = vm.run().unwrap();
 
-         // Debug: print trace
+        // Debug: print trace
         println!("Trace: {:?}", trace);
-        println!("mem[1] after: {}", vm.get_final_memory()[1]);
-        println!("cond: {}", trace[0].cond);
         
-        let circuit = SubleqCircuit::<TestField>::new(trace.clone(), vec![Fp::MODULUS, 5, Fp::MODULUS]);
+        let circuit = SubleqCircuit::<TestField>::new(trace.clone(), vec![]);
         let prover = MockProver::run(4, &circuit, vec![]).unwrap();
         prover.assert_satisfied();
         

@@ -36,6 +36,7 @@ pub struct SubleqConfig {
     // Selectors
     pub subleq_gate: Selector,
     pub pc_transition_gate: Selector,
+    pub cond_binary_gate: Selector,
 }
 
 /// Chip implementing Subleq constraints
@@ -80,6 +81,7 @@ impl<F: Field> SubleqChip<F> {
         
         let subleq_gate = meta.selector();
         let pc_transition_gate = meta.selector();
+        let cond_binary_gate = meta.selector();
         
         // Gate 1: Subleq operation constraint
         // mem_b_after = mem_b_before - mem_a
@@ -107,6 +109,16 @@ impl<F: Field> SubleqChip<F> {
             
             vec![s * (next_pc - expected_next_pc)]
         });
+
+
+        // Gate 3: Enforce cond is binary (0 or 1)
+        // cond * (cond - 1) = 0
+        meta.create_gate("cond binary", |meta| {
+            let s = meta.query_selector(cond_binary_gate);
+            let cond = meta.query_advice(cond, Rotation::cur());
+            
+            vec![s * (cond.clone() * (cond - Expression::Constant(F::ONE)))]
+        });
         
         SubleqConfig {
             pc: pc,
@@ -122,6 +134,7 @@ impl<F: Field> SubleqChip<F> {
             constants: constants,
             subleq_gate: subleq_gate,
             pc_transition_gate: pc_transition_gate,
+            cond_binary_gate: cond_binary_gate,
         }
     }
     
