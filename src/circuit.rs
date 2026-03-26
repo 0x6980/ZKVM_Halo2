@@ -28,7 +28,7 @@ pub struct SubleqConfig {
     pub cond: Column<Advice>,
     
     // Instance column for public inputs
-    pub instance: Column<Instance>,
+    // pub instance: Column<Instance>,
     
     // Fixed column for constants
     pub constants: Column<Fixed>,
@@ -65,7 +65,7 @@ impl<F: Field> SubleqChip<F> {
         mem_b_after: Column<Advice>,
         next_pc: Column<Advice>,
         cond: Column<Advice>,
-        instance: Column<Instance>,
+        // instance: Column<Instance>,
         constants: Column<Fixed>,
     ) -> SubleqConfig {
         // Enable advice columns
@@ -130,7 +130,7 @@ impl<F: Field> SubleqChip<F> {
             mem_b_after: mem_b_after,
             next_pc: next_pc,
             cond: cond,
-            instance: instance,
+            // instance: instance,
             constants: constants,
             subleq_gate: subleq_gate,
             pc_transition_gate: pc_transition_gate,

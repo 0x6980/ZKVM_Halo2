@@ -45,7 +45,7 @@ impl<F: Field> Circuit<F> for SubleqCircuit<F> {
         let cond = meta.advice_column();
         
         // Instance column for public inputs
-        let instance = meta.instance_column();
+        // let instance = meta.instance_column();
         
         // Fixed column for constants
         let constants = meta.fixed_column();
@@ -57,7 +57,8 @@ impl<F: Field> Circuit<F> for SubleqCircuit<F> {
             mem_b_before, 
             mem_b_after,
             next_pc, cond,
-            instance, constants,
+            // instance,
+            constants,
         )
     }
     
@@ -94,7 +95,7 @@ mod tests {
         
         // Initialize VM and run
         let mut vm = SubleqVM::new(program, 10, 100)
-            .with_initial_memory(vec![10, 3, 0]);
+            .with_initial_memory(vec![3, 10, 0]);
         
         let trace = vm.run().unwrap();
         
