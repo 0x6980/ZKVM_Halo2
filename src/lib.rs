@@ -87,7 +87,7 @@ mod tests {
         
     #[test]
     fn test_simple_circuit() {
-        // Create a simple program: R0 = R0 - R1
+        // Create a simple program: R1 = R1 - R0
         let program = vec![
             Instruction::new(0, 1, 2),
         ];
@@ -115,7 +115,7 @@ mod tests {
         ];
         
         let mut vm = SubleqVM::new(program, 10, 100)
-            .with_initial_memory(vec![2, 5, 0, 0]); // 2 - 5 = -3 <= 0, so jump
+            .with_initial_memory(vec![2, 5, 0, 0]); // 5 - 2 = 3 no jump
         
         let trace = vm.run().unwrap();
         
@@ -123,4 +123,31 @@ mod tests {
         let prover = MockProver::run(5, &circuit, vec![]).unwrap();
         prover.assert_satisfied();
     }
+
+    #[test]
+    fn test_zero_subtraction() {
+        // Test when subtracting zero (no change, positive result)
+        let program = vec![
+            Instruction::new(0, 1, 2), // mem[1] = mem[1] - mem[0]
+        ];
+        
+        let mut vm = SubleqVM::new(program, 10, 100)
+            .with_initial_memory(vec![0, 5, 0]); // mem[0] = 0
+        
+        let trace = vm.run().unwrap();
+
+         // Debug: print trace
+        println!("Trace: {:?}", trace);
+        println!("mem[1] after: {}", vm.get_final_memory()[1]);
+        println!("cond: {}", trace[0].cond);
+        
+        let circuit = SubleqCircuit::<TestField>::new(trace.clone(), vec![Fp::MODULUS, 5, Fp::MODULUS]);
+        let prover = MockProver::run(4, &circuit, vec![]).unwrap();
+        prover.assert_satisfied();
+        
+        assert_eq!(vm.get_final_memory()[1], 5); // Unchanged
+        assert_eq!(trace[0].cond, 0); // 5 > 0, no jump
+    }
+
+
 }
