@@ -25,7 +25,7 @@ pub struct TraceRow {
     pub mem_b_before: i64,   // Value at address b before execution
     pub mem_b_after: i64,    // Value at address b after execution
     pub next_pc: usize,      // Next program counter
-    pub cond: u8,            // 1 if mem_a_before <= 0, else 0
+    pub cond: u8,            // 1 if mem_b_after <= 0, else 0
 }
 
 impl Default for TraceRow {
