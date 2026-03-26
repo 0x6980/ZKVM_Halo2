@@ -143,14 +143,12 @@ impl<F: Field> SubleqChip<F> {
         if val >= 0 {
             F::from_u128(val as u128)
         } else {
-            // // For negative numbers, use F::from_u128 with modulo arithmetic
-            // // This is a simple approach - in production you'd want proper handling
-            // let modulus = F::from_u128(1u128 << 64); // Approximate, use actual modulus in production
-            // F::from_u128((val as i128 + (1i128 << 64)) as u128)
-
-            // Converting to u128 and then to field element works because
-            // PrimeField::from_u128 will reduce modulo the field characteristic
-            F::from_u128(val as u128)
+            // negative numbers are represented as -val = modulus - abs(val).
+            let abs_val = (-val) as u128;
+            let hex_str = F::MODULUS.strip_prefix("0x").unwrap_or(F::MODULUS);
+            let modulus= u128::from_str_radix(hex_str, 16);
+            
+            F::from_u128( modulus.unwrap() - abs_val)
         }
     }
     
@@ -167,6 +165,7 @@ impl<F: Field> SubleqChip<F> {
                     // Enable gates for this row
                     self.config.subleq_gate.enable(&mut region, i)?;
                     self.config.pc_transition_gate.enable(&mut region, i)?;
+                    self.config.cond_binary_gate.enable(&mut region, i)?;
                     
                     // Assign advice columns
                     region.assign_advice(|| "pc", self.config.pc, i, || Value::known(F::from_u128(row.pc as u128)))?;
@@ -183,4 +182,22 @@ impl<F: Field> SubleqChip<F> {
             },
         )
     }
+}
+
+
+#[test]
+fn test_field_conversion() {
+    use halo2_proofs::halo2curves::pasta::Fp;
+    
+    let pos = Fp::from_u128(5);
+    let neg_from_i64 = Fp::from_u128((-5i64) as u128);
+    
+    println!("Positive 5: {:?}", pos);
+    println!("Negative -5 as u128: {:?}", (-5i64) as u128);
+    println!("Negative -5 as field: {:?}", neg_from_i64);
+    
+    // Check if pos + neg = 0 in the field
+    let sum = pos + neg_from_i64;
+    println!("5 + (-5) = {:?}", sum);
+    assert_eq!(sum, Fp::zero());
 }
