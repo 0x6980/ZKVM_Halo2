@@ -8,6 +8,7 @@ use ff::PrimeField;
 use std::marker::PhantomData;
 
 use crate::vm::TraceRow;
+use crate::memory_table::{MemoryTraceColumns, MemoryTraceColumns, MemoryConsistencyChip};
 
 /// Field element wrapper for our circuit
 pub trait Field: PrimeField {}
@@ -26,17 +27,20 @@ pub struct SubleqConfig {
     pub mem_b_after: Column<Advice>,
     pub next_pc: Column<Advice>,
     pub cond: Column<Advice>,
+    pub step: Column<Advice>,
     
     // Instance column for public inputs
     // pub instance: Column<Instance>,
     
     // Fixed column for constants
     pub constants: Column<Fixed>,
+    pub memory_table:Column<Advice>,
     
     // Selectors
     pub subleq_gate: Selector,
     pub pc_transition_gate: Selector,
     pub cond_binary_gate: Selector,
+    pub memory_selector: Selector,
 }
 
 /// Chip implementing Subleq constraints
@@ -64,6 +68,7 @@ impl<F: Field> SubleqChip<F> {
         mem_b_before: Column<Advice>,
         mem_b_after: Column<Advice>,
         next_pc: Column<Advice>,
+        step: Column<Advice>,  // Add step column for memory consistency
         cond: Column<Advice>,
         // instance: Column<Instance>,
         constants: Column<Fixed>,
@@ -78,10 +83,15 @@ impl<F: Field> SubleqChip<F> {
         meta.enable_equality(mem_b_after);
         meta.enable_equality(next_pc);
         meta.enable_equality(cond);
+        meta.enable_equality(step);
         
         let subleq_gate = meta.selector();
         let pc_transition_gate = meta.selector();
         let cond_binary_gate = meta.selector();
+        let memory_selector = meta.selector();
+
+        // Configure memory table
+        let memory_table = MemoryTableConfig::configure(meta);
         
         // Gate 1: Subleq operation constraint
         // mem_b_after = mem_b_before - mem_a
@@ -119,7 +129,14 @@ impl<F: Field> SubleqChip<F> {
             
             vec![s * (cond.clone() * (cond - Expression::Constant(F::ONE)))]
         });
-        
+
+        // Add memory lookups
+        let trace_cols = MemoryTraceColumns::new(
+            step, a, mem_a, b, mem_b_before, mem_b_after, memory_selector.clone()
+        );
+        let memory_chip = MemoryConsistencyChip::new(memory_table.clone());
+        memory_chip.add_memory_lookups(meta, &trace_cols, &memory_table);
+
         SubleqConfig {
             pc: pc,
             a: a,
@@ -135,6 +152,8 @@ impl<F: Field> SubleqChip<F> {
             subleq_gate: subleq_gate,
             pc_transition_gate: pc_transition_gate,
             cond_binary_gate: cond_binary_gate,
+            memory_selector,
+            memory_table,
         }
     }
     
@@ -158,6 +177,10 @@ impl<F: Field> SubleqChip<F> {
         mut layouter: impl Layouter<F>,
         trace: &[TraceRow],
     ) -> Result<(), Error> {
+        // Build memory table first
+        let memory_chip = MemoryConsistencyChip::new(self.config.memory_table.clone());
+        memory_chip.build_table(layouter.namespace(|| "memory table"), trace)?;
+
         layouter.assign_region(
             || "assign trace",
             |mut region| {
@@ -166,6 +189,7 @@ impl<F: Field> SubleqChip<F> {
                     self.config.subleq_gate.enable(&mut region, i)?;
                     self.config.pc_transition_gate.enable(&mut region, i)?;
                     self.config.cond_binary_gate.enable(&mut region, i)?;
+                    self.config.memory_selector.enable(&mut region, i)?;
                     
                     // Assign advice columns
                     region.assign_advice(|| "pc", self.config.pc, i, || Value::known(F::from_u128(row.pc as u128)))?;
@@ -177,6 +201,7 @@ impl<F: Field> SubleqChip<F> {
                     region.assign_advice(|| "mem_b_after", self.config.mem_b_after, i, || Value::known(Self::to_field(row.mem_b_after as i64)))?;
                     region.assign_advice(|| "next_pc", self.config.next_pc, i, || Value::known(F::from_u128(row.next_pc as u128)))?;
                     region.assign_advice(|| "cond", self.config.cond, i, || Value::known(F::from_u128(row.cond as u128)))?;
+                    region.assign_advice(|| "step", self.config.step, i, || Value::known(F::from_u128(row.cond as u128)))?;
                 }
                 Ok(())
             },
