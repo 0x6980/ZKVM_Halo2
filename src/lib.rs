@@ -1,5 +1,6 @@
 pub mod vm;
 pub mod circuit;
+pub mod memory_table;
 
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -43,6 +44,7 @@ impl<F: Field> Circuit<F> for SubleqCircuit<F> {
         let mem_b_after = meta.advice_column();
         let next_pc = meta.advice_column();
         let cond = meta.advice_column();
+        let step = meta.advice_column();
         
         // Instance column for public inputs
         // let instance = meta.instance_column();
@@ -52,13 +54,18 @@ impl<F: Field> Circuit<F> for SubleqCircuit<F> {
         
         SubleqChip::configure(
             meta,
-            pc, a, b, c,
+            pc, 
+            a, 
+            b, 
+            c,
             mem_a, 
             mem_b_before, 
             mem_b_after,
-            next_pc, cond,
+            next_pc,
+            cond,
+            step,
             // instance,
-            constants,
+            constants
         )
     }
     

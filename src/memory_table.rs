@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::{Layouter, Value},
-    plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn},
+    plonk::{Advice, Column, ConstraintSystem, Expression, Error, Selector, TableColumn},
     poly::Rotation,
 };
 use ff::PrimeField;
@@ -19,15 +19,10 @@ pub struct MemoryTableConfig {
 
 impl MemoryTableConfig {
     pub fn configure(meta: &mut ConstraintSystem<impl PrimeField>) -> Self {
-        let step = meta.table_column();
-        let addr = meta.table_column();
-        let value_before = meta.table_column();
-        let value_after = meta.table_column();
-        
-        meta.annotate_lookup_table_column(step, "execution_step");
-        meta.annotate_lookup_table_column(addr, "memory_address");
-        meta.annotate_lookup_table_column(value_before, "value_before");
-        meta.annotate_lookup_table_column(value_after, "value_after");
+        let step = meta.lookup_table_column();
+        let addr = meta.lookup_table_column();
+        let value_before = meta.lookup_table_column();
+        let value_after = meta.lookup_table_column();
         
         Self { step, addr, value_before, value_after }
     }
@@ -36,12 +31,12 @@ impl MemoryTableConfig {
 /// Trace columns for memory lookups
 #[derive(Debug, Clone)]
 pub struct MemoryTraceColumns {
-    pub step: Column<Advice>,
-    pub read_addr: Column<Advice>,
-    pub read_value: Column<Advice>,
-    pub write_addr: Column<Advice>,
-    pub write_before: Column<Advice>,
-    pub write_after: Column<Advice>,
+    pub step: Column<Advice>,           // Step counter
+    pub read_addr: Column<Advice>,      // Address a (read operation)
+    pub read_value: Column<Advice>,     // mem_a value
+    pub write_addr: Column<Advice>,     // Address b (write operation)
+    pub write_before: Column<Advice>,   // mem_b_before
+    pub write_after: Column<Advice>,    // mem_b_after
     pub memory_selector: Selector,
 }
 
@@ -82,8 +77,13 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
         if val >= 0 {
             F::from_u128(val as u128)
         } else {
-            let modulus: u128 = F::MODULUS.into();
-            F::from_u128(modulus - (-val) as u128)
+            // let modulus: u128 = F::MODULUS.into();
+            // F::from_u128(modulus - (-val) as u128)
+
+            let abs_val = (-val) as u128;
+            let hex_str = F::MODULUS.strip_prefix("0x").unwrap_or(F::MODULUS);
+            let modulus= u128::from_str_radix(hex_str, 16);
+            F::from_u128(modulus.unwrap() - abs_val)
         }
     }
     

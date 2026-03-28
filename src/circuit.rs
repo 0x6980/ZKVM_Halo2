@@ -8,7 +8,7 @@ use ff::PrimeField;
 use std::marker::PhantomData;
 
 use crate::vm::TraceRow;
-use crate::memory_table::{MemoryTraceColumns, MemoryTraceColumns, MemoryConsistencyChip};
+use crate::memory_table::{MemoryTraceColumns, MemoryConsistencyChip, MemoryTableConfig};
 
 /// Field element wrapper for our circuit
 pub trait Field: PrimeField {}
@@ -34,7 +34,7 @@ pub struct SubleqConfig {
     
     // Fixed column for constants
     pub constants: Column<Fixed>,
-    pub memory_table:Column<Advice>,
+    pub memory_table: MemoryTableConfig,
     
     // Selectors
     pub subleq_gate: Selector,
@@ -68,8 +68,8 @@ impl<F: Field> SubleqChip<F> {
         mem_b_before: Column<Advice>,
         mem_b_after: Column<Advice>,
         next_pc: Column<Advice>,
-        step: Column<Advice>,  // Add step column for memory consistency
         cond: Column<Advice>,
+        step: Column<Advice>,  // Add step column for memory consistency
         // instance: Column<Instance>,
         constants: Column<Fixed>,
     ) -> SubleqConfig {
@@ -82,8 +82,8 @@ impl<F: Field> SubleqChip<F> {
         meta.enable_equality(mem_b_before);
         meta.enable_equality(mem_b_after);
         meta.enable_equality(next_pc);
-        meta.enable_equality(cond);
         meta.enable_equality(step);
+        meta.enable_equality(cond);
         
         let subleq_gate = meta.selector();
         let pc_transition_gate = meta.selector();
@@ -154,6 +154,7 @@ impl<F: Field> SubleqChip<F> {
             cond_binary_gate: cond_binary_gate,
             memory_selector,
             memory_table,
+            step: step,
         }
     }
     
@@ -166,8 +167,10 @@ impl<F: Field> SubleqChip<F> {
             let abs_val = (-val) as u128;
             let hex_str = F::MODULUS.strip_prefix("0x").unwrap_or(F::MODULUS);
             let modulus= u128::from_str_radix(hex_str, 16);
-            
-            F::from_u128( modulus.unwrap() - abs_val)
+            F::from_u128(modulus.unwrap() - abs_val)
+
+            // let modulus: u128 = F::MODULUS.into();
+            // F::from_u128(modulus - (-val) as u128)
         }
     }
     
