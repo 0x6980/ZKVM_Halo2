@@ -17,30 +17,34 @@ impl<F> Field for F where F: PrimeField {}
 /// Configuration for our Subleq circuit
 #[derive(Debug, Clone)]
 pub struct SubleqConfig {
-    // Advice columns
-    pub pc: Column<Advice>,
-    pub a: Column<Advice>,
-    pub b: Column<Advice>,
-    pub c: Column<Advice>,
-    pub mem_a: Column<Advice>,
-    pub mem_b_before: Column<Advice>,
-    pub mem_b_after: Column<Advice>,
-    pub next_pc: Column<Advice>,
-    pub cond: Column<Advice>,
+    // Instruction columns
+    pub pc: Column<Advice>,                 // Program counter
+    pub a: Column<Advice>,                  // First operand address
+    pub b: Column<Advice>,                  // Second operand address
+    pub c: Column<Advice>,                  // Jump target
+    
+    // Operation columns
+    pub mem_a: Column<Advice>,              // Value at address a
+    pub mem_b_before: Column<Advice>,       // Value at address b
+    pub mem_b_after: Column<Advice>,        // b - a
+    
+    // Branch condition
+    pub next_pc: Column<Advice>,            // Next PC value
+    pub cond: Column<Advice>,               // Whether branch is taken (0 or 1)
+
     pub step: Column<Advice>,
-    
-    // Instance column for public inputs
-    // pub instance: Column<Instance>,
-    
-    // Fixed column for constants
+
     pub constants: Column<Fixed>,
-    pub memory_table: MemoryTableConfig,
+    // Public inputs/outputs
+    //pub instance: Column<Instance>,
     
     // Selectors
     pub subleq_gate: Selector,
     pub pc_transition_gate: Selector,
     pub cond_binary_gate: Selector,
-    pub memory_selector: Selector,
+    pub memory_selector: Selector, 
+
+    pub memory_table: MemoryTableConfig,
 }
 
 /// Chip implementing Subleq constraints
@@ -82,8 +86,8 @@ impl<F: Field> SubleqChip<F> {
         meta.enable_equality(mem_b_before);
         meta.enable_equality(mem_b_after);
         meta.enable_equality(next_pc);
-        meta.enable_equality(step);
         meta.enable_equality(cond);
+        meta.enable_equality(step);
         
         let subleq_gate = meta.selector();
         let pc_transition_gate = meta.selector();
@@ -115,7 +119,7 @@ impl<F: Field> SubleqChip<F> {
             
             let one = Expression::Constant(F::ONE);
             // next_pc = pc + 1 + cond * (c - pc - 1)
-            let expected_next_pc = pc.clone() + one.clone() + cond.clone() * (c - pc.clone() - one.clone());
+            let expected_next_pc = pc.clone() + one.clone() + cond.clone() * (c - pc - one);
             
             vec![s * (next_pc - expected_next_pc)]
         });
@@ -130,7 +134,7 @@ impl<F: Field> SubleqChip<F> {
             vec![s * (cond.clone() * (cond - Expression::Constant(F::ONE)))]
         });
 
-        // Add memory lookups
+        // Add memory lookup constraints
         let trace_cols = MemoryTraceColumns::new(
             step, a, mem_a, b, mem_b_before, mem_b_after, memory_selector.clone()
         );
@@ -179,15 +183,19 @@ impl<F: Field> SubleqChip<F> {
         &self,
         mut layouter: impl Layouter<F>,
         trace: &[TraceRow],
+        initial_memory: &[i64],
     ) -> Result<(), Error> {
         // Build memory table first
         let memory_chip = MemoryConsistencyChip::new(self.config.memory_table.clone());
-        memory_chip.build_table(layouter.namespace(|| "memory table"), trace)?;
+        memory_chip.build_table(layouter.namespace(|| "memory table"), trace, initial_memory)?;
 
         layouter.assign_region(
             || "assign trace",
             |mut region| {
+                println!("\n=== ASSIGNING TRACE ROWS ===");
                 for (i, row) in trace.iter().enumerate() {
+                    println!("Trace row {}: step={}, a={}, mem_a={}, b={}, before={}, after={}", 
+                    i, i, row.a, row.mem_a, row.b, row.mem_b_before, row.mem_b_after);
                     // Enable gates for this row
                     self.config.subleq_gate.enable(&mut region, i)?;
                     self.config.pc_transition_gate.enable(&mut region, i)?;

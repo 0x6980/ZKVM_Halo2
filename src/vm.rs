@@ -3,9 +3,9 @@ use std::collections::HashMap;
 /// Subleq instruction: mem[b] -= mem[a]; if mem[b] <= 0 { pc = c } else { pc += 1 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Instruction {
-    pub a: usize,
-    pub b: usize,
-    pub c: usize,
+    pub a: usize, // Source address
+    pub b: usize, // Destination address (also condition)
+    pub c: usize, // Jump target
 }
 
 impl Instruction {
@@ -28,6 +28,23 @@ pub struct TraceRow {
     pub cond: u8,            // 1 if mem_b_after <= 0, else 0
 }
 
+#[derive(Debug, Clone)]
+struct SubleqTrace {
+    step: usize,
+    pc: usize,
+    inst_a: usize,
+    inst_b: usize,
+    inst_c: usize,
+    op_a_value: i64,
+    op_b_value: i64,
+    op_result: i64,
+    branch_taken: u64,
+    mem_addr: usize,
+    mem_old_value: i64,
+    mem_new_value: i64,
+    new_pc: usize,
+}
+
 impl Default for TraceRow {
     fn default() -> Self {
         Self {
@@ -47,6 +64,7 @@ impl Default for TraceRow {
 /// Subleq Virtual Machine
 pub struct SubleqVM {
     memory: Vec<i64>,
+    initial_memory: Vec<i64>,  // Store initial memory for circuit
     pc: usize,
     program: Vec<Instruction>,
     trace: Vec<TraceRow>,
@@ -57,6 +75,7 @@ impl SubleqVM {
     pub fn new(program: Vec<Instruction>, memory_size: usize, max_steps: usize) -> Self {
         Self {
             memory: vec![0; memory_size],
+            initial_memory: vec![0; memory_size],
             pc: 0,
             program,
             trace: Vec::new(),
@@ -66,8 +85,20 @@ impl SubleqVM {
 
     pub fn with_initial_memory(mut self, initial_memory: Vec<i64>) -> Self {
         let size = self.memory.len();
-        self.memory[..initial_memory.len().min(size)].copy_from_slice(&initial_memory[..size.min(initial_memory.len())]);
+        // Store initial memory
+        self.initial_memory = vec![0; size];
+        self.initial_memory[..initial_memory.len().min(size)].copy_from_slice(
+            &initial_memory[..size.min(initial_memory.len())]
+        );
+        // Set current memory
+        self.memory[..initial_memory.len().min(size)].copy_from_slice(
+            &initial_memory[..size.min(initial_memory.len())]
+        );
         self
+    }
+
+    pub fn get_initial_memory(&self) -> Vec<i64> {
+        self.initial_memory.clone()
     }
 
     /// Execute a single step
@@ -141,6 +172,19 @@ impl SubleqVM {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_vm_with_initial_memory() {
+        let program = vec![Instruction::new(0, 1, 2)];
+        let mut vm = SubleqVM::new(program, 10, 100)
+            .with_initial_memory(vec![3, 10, 0]);
+        
+        let trace = vm.run().unwrap();
+        assert_eq!(trace.len(), 1);
+        assert_eq!(vm.get_final_memory()[1], 7);
+        assert_eq!(vm.get_initial_memory()[0], 3);
+        assert_eq!(vm.get_initial_memory()[1], 10);
+    }
+    
     #[test]
     fn test_new_vm() {
         let program = vec![Instruction::new(0, 1, 2)];

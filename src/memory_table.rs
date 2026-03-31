@@ -24,6 +24,11 @@ impl MemoryTableConfig {
         let value_before = meta.lookup_table_column();
         let value_after = meta.lookup_table_column();
         
+        // meta.annotate_lookup_column(step, "step");
+        // meta.annotate_lookup_column(addr, "address");
+        // meta.annotate_lookup_column(value_before, "value_before");
+        // meta.annotate_lookup_column(value_after, "value_after");
+
         Self { step, addr, value_before, value_after }
     }
 }
@@ -92,16 +97,25 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
         &self,
         mut layouter: impl Layouter<F>,
         trace: &[TraceRow],
+        initial_memory: &[i64],
     ) -> Result<(), Error> {
         use std::collections::HashMap;
         
-        // Track current memory state
+        // Initialize memory state with initial values
         let mut memory_state: HashMap<usize, i64> = HashMap::new();
+        for (addr, &value) in initial_memory.iter().enumerate() {
+            if value != 0 {
+                memory_state.insert(addr, value);
+            }
+        }
+
         let mut table_rows: Vec<(usize, usize, i64, i64)> = Vec::new();
         
         for (step, row) in trace.iter().enumerate() {
+            println!("Step {}: Processing instruction", step);
             // READ from address a
             let read_before = *memory_state.get(&row.a).unwrap_or(&0);
+            println!("  READ: addr={}, before={}, trace_mem_a={}", row.a, read_before, row.mem_a);
             assert_eq!(read_before, row.mem_a, 
                 "Memory inconsistency at step {}: read from addr {} expected {} got {}", 
                 step, row.a, read_before, row.mem_a);
@@ -109,15 +123,18 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
             
             // WRITE to address b
             let write_before = *memory_state.get(&row.b).unwrap_or(&0);
+            println!("  WRITE: addr={}, before={}, after={}, trace_before={}, trace_after={}", 
+            row.b, write_before, row.mem_b_after, row.mem_b_before, row.mem_b_after);
             assert_eq!(write_before, row.mem_b_before,
                 "Memory inconsistency at step {}: write to addr {} expected {} got {}", 
                 step, row.b, write_before, row.mem_b_before);
             table_rows.push((step, row.b, row.mem_b_before, row.mem_b_after));
-            
-            // Update memory state
-            memory_state.insert(row.b, row.mem_b_after);
         }
         
+        println!("\n=== TABLE ROWS ===");
+        for (i, (step, addr, before, after)) in table_rows.iter().enumerate() {
+            println!("Row {}: step={}, addr={}, before={}, after={}", i, step, addr, before, after);
+        }
         // Assign table
         layouter.assign_table(
             || "memory table",
@@ -162,12 +179,17 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
     ) {
         // Lookup for READ operations
         meta.lookup("memory_read", |meta| {
-            let s = meta.query_selector(trace_cols.memory_selector);
+            let s: Expression<F> = meta.query_selector(trace_cols.memory_selector);
             let step = meta.query_advice(trace_cols.step, Rotation::cur());
             let addr = meta.query_advice(trace_cols.read_addr, Rotation::cur());
             let before = meta.query_advice(trace_cols.read_value, Rotation::cur());
             let after = meta.query_advice(trace_cols.read_value, Rotation::cur());
-            
+            println!("{:?}", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            println!("{:?}", step);
+            println!("{:?}", memory_config.step);
+            println!("{:?}", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            println!("{:?}", addr);
+            println!("{:?}", memory_config.addr);
             vec![
                 (step, memory_config.step),
                 (addr, memory_config.addr),
