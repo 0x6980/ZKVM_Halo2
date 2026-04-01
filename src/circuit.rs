@@ -136,7 +136,7 @@ impl<F: Field> SubleqChip<F> {
 
         // Add memory lookup constraints
         let trace_cols = MemoryTraceColumns::new(
-            step, a, mem_a, b, mem_b_before, mem_b_after, memory_selector.clone()
+            a, mem_a, b, mem_b_before, mem_b_after, memory_selector
         );
         let memory_chip = MemoryConsistencyChip::new(memory_table.clone());
         memory_chip.add_memory_lookups(meta, &trace_cols, &memory_table);

@@ -11,7 +11,7 @@ use crate::vm::TraceRow;
 /// Memory table configuration
 #[derive(Debug, Clone)]
 pub struct MemoryTableConfig {
-    pub step: TableColumn,
+    // pub step: TableColumn,
     pub addr: TableColumn,
     pub value_before: TableColumn,
     pub value_after: TableColumn,
@@ -19,7 +19,7 @@ pub struct MemoryTableConfig {
 
 impl MemoryTableConfig {
     pub fn configure(meta: &mut ConstraintSystem<impl PrimeField>) -> Self {
-        let step = meta.lookup_table_column();
+        // let step = meta.lookup_table_column();
         let addr = meta.lookup_table_column();
         let value_before = meta.lookup_table_column();
         let value_after = meta.lookup_table_column();
@@ -29,14 +29,15 @@ impl MemoryTableConfig {
         // meta.annotate_lookup_column(value_before, "value_before");
         // meta.annotate_lookup_column(value_after, "value_after");
 
-        Self { step, addr, value_before, value_after }
+        Self { addr, value_before, value_after }
     }
 }
 
 /// Trace columns for memory lookups
 #[derive(Debug, Clone)]
 pub struct MemoryTraceColumns {
-    pub step: Column<Advice>,           // Step counter
+    // pub step: Column<Advice>,           // Step counter
+     
     pub read_addr: Column<Advice>,      // Address a (read operation)
     pub read_value: Column<Advice>,     // mem_a value
     pub write_addr: Column<Advice>,     // Address b (write operation)
@@ -47,7 +48,7 @@ pub struct MemoryTraceColumns {
 
 impl MemoryTraceColumns {
     pub fn new(
-        step: Column<Advice>,
+        // step: Column<Advice>,
         a: Column<Advice>,
         mem_a: Column<Advice>,
         b: Column<Advice>,
@@ -56,7 +57,7 @@ impl MemoryTraceColumns {
         memory_selector: Selector,
     ) -> Self {
         Self {
-            step,
+            // step,
             read_addr: a,
             read_value: mem_a,
             write_addr: b,
@@ -80,6 +81,8 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
     
     fn to_field(val: i64) -> F {
         if val >= 0 {
+            println!("{:?}", "ttttttttttttttttttttttttttttttttttttttttttttttt");
+            println!("{:?}", val);
             F::from_u128(val as u128)
         } else {
             // let modulus: u128 = F::MODULUS.into();
@@ -109,8 +112,9 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
             }
         }
 
-        let mut table_rows: Vec<(usize, usize, i64, i64)> = Vec::new();
-        
+        let mut table_rows: Vec<(usize, i64, i64)> = Vec::new();
+        println!("{}", trace.len());
+        println!("{}", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
         for (step, row) in trace.iter().enumerate() {
             println!("Step {}: Processing instruction", step);
             // READ from address a
@@ -119,7 +123,7 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
             assert_eq!(read_before, row.mem_a, 
                 "Memory inconsistency at step {}: read from addr {} expected {} got {}", 
                 step, row.a, read_before, row.mem_a);
-            table_rows.push((step, row.a, row.mem_a, row.mem_a));
+            table_rows.push((row.a, row.mem_a, row.mem_a));
             
             // WRITE to address b
             let write_before = *memory_state.get(&row.b).unwrap_or(&0);
@@ -128,24 +132,26 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
             assert_eq!(write_before, row.mem_b_before,
                 "Memory inconsistency at step {}: write to addr {} expected {} got {}", 
                 step, row.b, write_before, row.mem_b_before);
-            table_rows.push((step, row.b, row.mem_b_before, row.mem_b_after));
+            table_rows.push((row.b, row.mem_b_before, row.mem_b_after));
         }
         
         println!("\n=== TABLE ROWS ===");
-        for (i, (step, addr, before, after)) in table_rows.iter().enumerate() {
-            println!("Row {}: step={}, addr={}, before={}, after={}", i, step, addr, before, after);
+        for (i, (addr, before, after)) in table_rows.iter().enumerate() {
+            println!("Row {}: addr={}, before={}, after={}", i, addr, before, after);
         }
         // Assign table
         layouter.assign_table(
             || "memory table",
             |mut table| {
-                for (idx, (step, addr, before, after)) in table_rows.iter().enumerate() {
-                    table.assign_cell(
-                        || format!("step_{}", idx),
-                        self.config.step,
-                        idx,
-                        || Value::known(F::from_u128(*step as u128)),
-                    )?;
+                for (idx, (addr, before, after)) in table_rows.iter().enumerate() {
+                    println!("{:?}", Value::known(Self::to_field(*after)));
+                    println!("{}", "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr");
+                    // table.assign_cell(
+                    //     || format!("step_{}", idx),
+                    //     self.config.step,
+                    //     idx,
+                    //     || Value::known(F::from_u128(*step as u128)),
+                    // )?;
                     table.assign_cell(
                         || format!("addr_{}", idx),
                         self.config.addr,
@@ -180,18 +186,12 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
         // Lookup for READ operations
         meta.lookup("memory_read", |meta| {
             let s: Expression<F> = meta.query_selector(trace_cols.memory_selector);
-            let step = meta.query_advice(trace_cols.step, Rotation::cur());
+            // let step = meta.query_advice(trace_cols.step, Rotation::cur());
             let addr = meta.query_advice(trace_cols.read_addr, Rotation::cur());
             let before = meta.query_advice(trace_cols.read_value, Rotation::cur());
             let after = meta.query_advice(trace_cols.read_value, Rotation::cur());
-            println!("{:?}", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            println!("{:?}", step);
-            println!("{:?}", memory_config.step);
-            println!("{:?}", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-            println!("{:?}", addr);
-            println!("{:?}", memory_config.addr);
             vec![
-                (step, memory_config.step),
+                // (step, memory_config.step),
                 (addr, memory_config.addr),
                 (before, memory_config.value_before),
                 (after, memory_config.value_after),
@@ -201,13 +201,13 @@ impl<F: PrimeField> MemoryConsistencyChip<F> {
         // Lookup for WRITE operations
         meta.lookup("memory_write", |meta| {
             let s = meta.query_selector(trace_cols.memory_selector);
-            let step = meta.query_advice(trace_cols.step, Rotation::cur());
+            // let step = meta.query_advice(trace_cols.step, Rotation::cur());
             let addr = meta.query_advice(trace_cols.write_addr, Rotation::cur());
             let before = meta.query_advice(trace_cols.write_before, Rotation::cur());
             let after = meta.query_advice(trace_cols.write_after, Rotation::cur());
             
             vec![
-                (step, memory_config.step),
+                // (step, memory_config.step),
                 (addr, memory_config.addr),
                 (before, memory_config.value_before),
                 (after, memory_config.value_after),
