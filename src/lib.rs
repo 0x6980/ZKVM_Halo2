@@ -1,6 +1,7 @@
 pub mod vm;
 pub mod circuit;
 pub mod memory_table;
+mod new_impl;
 
 use halo2_proofs::{
     circuit::{Layouter, SimpleFloorPlanner},

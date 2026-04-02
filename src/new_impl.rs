@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use halo2_proofs::{arithmetic::FieldExt, circuit::*, plonk::*, poly::Rotation};
+use halo2_proofs::{circuit::*, plonk::*, poly::Rotation};
 
+use ff::PrimeField;
 // ============================================================================
 // SUBLEQ Instruction Definition
 // ============================================================================
@@ -55,6 +56,7 @@ pub struct SubleqConfig {
     
     // Lookup table for memory consistency
     pub memory_table: TableColumn,
+    pub memory_table_columns: [TableColumn; 3],
     
     // Public inputs
     pub instance: Column<Instance>,
@@ -92,12 +94,12 @@ pub struct SubleqTrace {
 // SUBLEQ Chip - Main Circuit Logic
 // ============================================================================
 #[derive(Debug, Clone)]
-pub struct SubleqChip<F: FieldExt> {
+pub struct SubleqChip<F: PrimeField> {
     config: SubleqConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> SubleqChip<F> {
+impl<F: PrimeField> SubleqChip<F> {
     pub fn new(config: SubleqConfig) -> Self {
         Self {
             config,
@@ -133,7 +135,11 @@ impl<F: FieldExt> SubleqChip<F> {
         let memory_write_selector = meta.selector();
         
         // Create lookup table for memory consistency
-        let memory_table = meta.lookup_table_column();
+        // Create lookup table columns (separate columns for each field)
+        let memory_table_addr = meta.lookup_table_column();
+        let memory_table_value = meta.lookup_table_column();
+        let memory_table_timestamp = meta.lookup_table_column();
+        let memory_table_columns = [memory_table_addr, memory_table_value, memory_table_timestamp];
         
         // Instance column for public inputs
         let instance = meta.instance_column();
@@ -177,7 +183,7 @@ impl<F: FieldExt> SubleqChip<F> {
             let branch = meta.query_advice(branch_taken, Rotation::cur());
             
             // branch must be 0 or 1
-            let is_binary = branch.clone() * (branch.clone() - F::one());
+            let is_binary = branch.clone() * (branch.clone() - Expression::Constant(F::ONE));
             
             // If branch = 1, then result must be 0 or negative
             // In field arithmetic, we constrain branch * result = 0
@@ -188,7 +194,7 @@ impl<F: FieldExt> SubleqChip<F> {
             // (This is a simplification - real implementation would need range checks)
             let branch_condition = branch.clone() * result.clone();
             
-            vec![s * is_binary, s * branch_condition]
+            vec![s.clone() * is_binary, s * branch_condition]
         });
         
         // ====================================================================
@@ -202,8 +208,8 @@ impl<F: FieldExt> SubleqChip<F> {
             let branch = meta.query_advice(branch_taken, Rotation::cur());
             let new_pc_val = meta.query_advice(new_pc, Rotation::cur());
             
-            let default_pc = pc_cur + F::from(3);
-            let expected = default_pc + branch * (inst_c - default_pc);
+            let default_pc = pc_cur + Expression::Constant(F::from(3));
+            let expected = default_pc.clone() + branch * (inst_c - default_pc);
             
             vec![s * (new_pc_val - expected)]
         });
@@ -226,14 +232,6 @@ impl<F: FieldExt> SubleqChip<F> {
         // Every memory operation must appear in the sorted memory table
         // ====================================================================
         
-        // Define the memory lookup table
-        meta.lookup_table("memory table", |meta| {
-            let addr = meta.query_advice(mem_addr, Rotation::cur());
-            let value = meta.query_advice(mem_value, Rotation::cur());
-            let timestamp = meta.query_advice(mem_timestamp, Rotation::cur());
-            vec![(addr, value, timestamp)]
-        });
-        
         // Memory reads must be in the lookup table
         meta.lookup("memory reads", |meta| {
             let read = meta.query_selector(memory_read_selector);
@@ -241,17 +239,26 @@ impl<F: FieldExt> SubleqChip<F> {
             let value = meta.query_advice(mem_value, Rotation::cur());
             let timestamp = meta.query_advice(mem_timestamp, Rotation::cur());
             
-            vec![(read * addr, read * value, read * timestamp)]
+            // Return tuple of (expression, table_column) for each column
+            vec![
+                (read.clone() * addr, memory_table_addr),
+                (read.clone() * value, memory_table_value),
+                (read * timestamp, memory_table_timestamp),
+            ]
         });
         
         // Memory writes must be in the lookup table
         meta.lookup("memory writes", |meta| {
             let write = meta.query_selector(memory_write_selector);
             let addr = meta.query_advice(mem_addr, Rotation::cur());
-            let value = meta.query_advice(mem_new_value, Rotation::cur());
+            let value = meta.query_advice(mem_value, Rotation::cur());
             let timestamp = meta.query_advice(mem_timestamp, Rotation::cur());
             
-            vec![(write * addr, write * value, write * timestamp)]
+            vec![
+                (write.clone() * addr, memory_table_addr),
+                (write.clone() * value, memory_table_value),
+                (write * timestamp, memory_table_timestamp),
+            ]
         });
         
         // ====================================================================
@@ -263,7 +270,7 @@ impl<F: FieldExt> SubleqChip<F> {
             let ts_cur = meta.query_advice(mem_timestamp, Rotation::cur());
             let ts_next = meta.query_advice(mem_timestamp, Rotation::next());
             
-            vec![s * (ts_next - (ts_cur + F::one()))]
+            vec![s * (ts_next - (ts_cur + Expression::Constant(F::ONE)))]
         });
         
         SubleqConfig {
@@ -283,7 +290,8 @@ impl<F: FieldExt> SubleqChip<F> {
             step_selector,
             memory_read_selector,
             memory_write_selector,
-            memory_table,
+            memory_table:memory_table_addr,
+            memory_table_columns,
             instance,
         }
     }
@@ -451,6 +459,70 @@ impl<F: FieldExt> SubleqChip<F> {
         Ok(())
     }
     
+    // fn assign_memory_table(
+    //     &self,
+    //     mut layouter: impl Layouter<F>,
+    //     accesses: &[MemoryAccess],
+    // ) -> Result<(), Error> {
+    //     layouter.assign_table(||"memory table", |mut table| {
+    //         for (row, access) in accesses.iter().enumerate() {
+    //             table.assign_cell(
+    //                 || format!("addr_{}", row),
+    //                 self.config.memory_table,
+    //                 row,
+    //                 || Value::known(F::from(access.addr as u64)),
+    //             )?;
+                
+    //             table.assign_cell(
+    //                 || format!("value_{}", row),
+    //                 self.config.memory_table,
+    //                 row,
+    //                 || Value::known(F::from(access.value as u64)),
+    //             )?;
+                
+    //             table.assign_cell(
+    //                 || format!("timestamp_{}", row),
+    //                 self.config.memory_table,
+    //                 row,
+    //                 || Value::known(F::from(access.timestamp as u64)),
+    //             )?;
+    //         }
+    //         Ok(())
+    //     })
+    // }
+    pub fn assign_memory_table(
+        &self,
+        mut layouter: impl Layouter<F>,
+        accesses: &[MemoryAccess],
+    ) -> Result<(), Error> {
+        // Assign each column of the lookup table separately
+        for (col_idx, table_col) in self.config.memory_table_columns.iter().enumerate() {
+            layouter.assign_table(
+                || format!("memory_table_col_{}", col_idx),
+                |mut table| {
+                    for (row, access) in accesses.iter().enumerate() {
+                        let value = match col_idx {
+                            0 => F::from(access.addr as u64),
+                            1 => F::from(access.value as u64),
+                            2 => F::from(access.timestamp as u64),
+                            _ => unreachable!(),
+                        };
+                        
+                        table.assign_cell(
+                            || format!("row_{}", row),
+                            *table_col,
+                            row,
+                            || Value::known(value),
+                        )?;
+                    }
+                    Ok(())
+                },
+            )?;
+        }
+        
+        Ok(())
+    }
+
     // ========================================================================
     // Assign the execution trace to the circuit
     // ========================================================================
@@ -466,45 +538,13 @@ impl<F: FieldExt> SubleqChip<F> {
         // Then assign the execution trace
         self.assign_execution_rows(layouter.namespace(|| "execution"), trace)
     }
-    
-    fn assign_memory_table(
-        &self,
-        mut layouter: impl Layouter<F>,
-        accesses: &[MemoryAccess],
-    ) -> Result<(), Error> {
-        layouter.assign_table("memory table", |mut table| {
-            for (row, access) in accesses.iter().enumerate() {
-                table.assign_cell(
-                    || format!("addr_{}", row),
-                    self.config.memory_table,
-                    row,
-                    || Ok(F::from(access.addr as u64)),
-                )?;
-                
-                table.assign_cell(
-                    || format!("value_{}", row),
-                    self.config.memory_table,
-                    row,
-                    || Ok(F::from(access.value as u64)),
-                )?;
-                
-                table.assign_cell(
-                    || format!("timestamp_{}", row),
-                    self.config.memory_table,
-                    row,
-                    || Ok(F::from(access.timestamp as u64)),
-                )?;
-            }
-            Ok(())
-        })
-    }
-    
+
     fn assign_execution_rows(
         &self,
         mut layouter: impl Layouter<F>,
         trace: &[SubleqTrace],
     ) -> Result<(), Error> {
-        layouter.assign_region("execution trace", |mut region| {
+        layouter.assign_region(||"execution trace", |mut region| {
             for (row, step) in trace.iter().enumerate() {
                 // Enable selectors for this row
                 self.config.step_selector.enable(&mut region, row)?;
@@ -516,7 +556,7 @@ impl<F: FieldExt> SubleqChip<F> {
                     || "pc",
                     self.config.pc,
                     row,
-                    || Ok(F::from(step.pc as u64)),
+                    || Value::known(F::from(step.pc as u64)),
                 )?;
                 
                 // Assign instruction components
@@ -524,21 +564,21 @@ impl<F: FieldExt> SubleqChip<F> {
                     || "inst_a",
                     self.config.inst_a,
                     row,
-                    || Ok(F::from(step.inst_a as u64)),
+                    || Value::known(F::from(step.inst_a as u64)),
                 )?;
                 
                 region.assign_advice(
                     || "inst_b",
                     self.config.inst_b,
                     row,
-                    || Ok(F::from(step.inst_b as u64)),
+                    || Value::known(F::from(step.inst_b as u64)),
                 )?;
                 
                 region.assign_advice(
                     || "inst_c",
                     self.config.inst_c,
                     row,
-                    || Ok(F::from(step.inst_c as u64)),
+                    || Value::known(F::from(step.inst_c as u64)),
                 )?;
                 
                 // Assign operation values
@@ -546,28 +586,28 @@ impl<F: FieldExt> SubleqChip<F> {
                     || "op_a_value",
                     self.config.op_a_value,
                     row,
-                    || Ok(F::from(step.op_a_value as u64)),
+                    || Value::known(F::from(step.op_a_value as u64)),
                 )?;
                 
                 region.assign_advice(
                     || "op_b_value",
                     self.config.op_b_value,
                     row,
-                    || Ok(F::from(step.op_b_value as u64)),
+                    || Value::known(F::from(step.op_b_value as u64)),
                 )?;
                 
                 region.assign_advice(
                     || "op_result",
                     self.config.op_result,
                     row,
-                    || Ok(F::from(step.op_result as u64)),
+                    || Value::known(F::from(step.op_result as u64)),
                 )?;
                 
                 region.assign_advice(
                     || "op_timestamp",
                     self.config.op_timestamp,
                     row,
-                    || Ok(F::from(step.op_timestamp as u64)),
+                    || Value::known(F::from(step.op_timestamp as u64)),
                 )?;
                 
                 // Assign branch control
@@ -575,14 +615,14 @@ impl<F: FieldExt> SubleqChip<F> {
                     || "branch_taken",
                     self.config.branch_taken,
                     row,
-                    || Ok(F::from(step.branch_taken)),
+                    || Value::known(F::from(step.branch_taken)),
                 )?;
                 
                 region.assign_advice(
                     || "new_pc",
                     self.config.new_pc,
                     row,
-                    || Ok(F::from(step.new_pc as u64)),
+                    || Value::known(F::from(step.new_pc as u64)),
                 )?;
                 
                 // Assign memory access for this row
@@ -591,21 +631,21 @@ impl<F: FieldExt> SubleqChip<F> {
                     || "mem_addr_read",
                     self.config.mem_addr,
                     row,
-                    || Ok(F::from(step.inst_b as u64)), // Reading from address b
+                    || Value::known(F::from(step.inst_b as u64)), // Reading from address b
                 )?;
                 
                 region.assign_advice(
                     || "mem_value_read",
                     self.config.mem_value,
                     row,
-                    || Ok(F::from(step.op_b_value as u64)),
+                    || Value::known(F::from(step.op_b_value as u64)),
                 )?;
                 
                 region.assign_advice(
                     || "mem_timestamp_read",
                     self.config.mem_timestamp,
                     row,
-                    || Ok(F::from(step.op_timestamp as u64)),
+                    || Value::known(F::from(step.op_timestamp as u64)),
                 )?;
             }
             
@@ -634,14 +674,14 @@ impl<F: FieldExt> SubleqChip<F> {
 // Circuit Implementation
 // ============================================================================
 #[derive(Default)]
-pub struct SubleqCircuit<F: FieldExt> {
+pub struct SubleqCircuit<F: PrimeField> {
     program: Vec<SubleqInstruction>,
     initial_memory: Vec<(usize, i64)>,
     result_addr: usize,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> SubleqCircuit<F> {
+impl<F: PrimeField> SubleqCircuit<F> {
     pub fn new(
         program: Vec<SubleqInstruction>,
         initial_memory: Vec<(usize, i64)>,
@@ -656,7 +696,7 @@ impl<F: FieldExt> SubleqCircuit<F> {
     }
 }
 
-impl<F: FieldExt> Circuit<F> for SubleqCircuit<F> {
+impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
     type Config = SubleqConfig;
     type FloorPlanner = SimpleFloorPlanner;
     
@@ -691,7 +731,7 @@ impl<F: FieldExt> Circuit<F> for SubleqCircuit<F> {
     }
 }
 
-impl<F: FieldExt> SubleqCircuit<F> {
+impl<F: PrimeField> SubleqCircuit<F> {
     fn compute_final_memory(&self) -> Vec<i64> {
         let mut memory = [0; 256];
         for (addr, value) in &self.initial_memory {
@@ -838,8 +878,9 @@ pub fn multiplication_program() -> (Vec<SubleqInstruction>, Vec<(usize, i64)>, u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use halo2_proofs::{dev::MockProver, pasta::Fp};
+    use halo2_proofs::{dev::MockProver, halo2curves::pasta::Fp};
     
+    type TestField = Fp;
     #[test]
     fn test_subtraction() {
         let k = 8;
