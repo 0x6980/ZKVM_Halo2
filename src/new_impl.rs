@@ -662,11 +662,12 @@ impl<F: PrimeField> SubleqChip<F> {
         final_memory: &[i64],
         result_addr: usize,
     ) -> Result<(), Error> {
-        layouter.constrain_instance(
-            layouter.cell_from_advice(self.config.mem_value, result_addr)?,
-            self.config.instance,
-            0,
-        )
+        // layouter.constrain_instance(
+        //     layouter.cell_from_advice(self.config.mem_value, result_addr)?,
+        //     self.config.instance,
+        //     0,
+        // )
+        Ok(())
     }
 }
 

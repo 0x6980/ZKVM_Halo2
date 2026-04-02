@@ -1,1 +1,1 @@
-# ZKVM_Halo2
+Run tests in lib.rs
