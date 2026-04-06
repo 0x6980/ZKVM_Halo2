@@ -34,6 +34,16 @@ pub struct TraceRow {
 }
 
 // ============================================================================
+// Memory Event for Permutation
+// ============================================================================
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub enum MemoryEventType {
+    ReadA = 0,
+    ReadB = 1,
+    Write = 2,
+}
+
+// ============================================================================
 // Memory Access Record (for trace collection)
 // ============================================================================
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -41,7 +51,7 @@ pub struct MemoryAccess {
     pub addr: usize,
     pub value: i64,
     pub timestamp: usize,
-    pub is_write: bool,
+    pub event_type: MemoryEventType,
 }
 
 
@@ -94,7 +104,7 @@ impl SubleqState {
                     addr,
                     value: *value,
                     timestamp: current_timestamp,
-                    is_write: true,
+                    event_type: MemoryEventType::Write,
                 });
             }
         }
@@ -112,7 +122,7 @@ impl SubleqState {
                 addr: instruction.a,
                 value: a_val,
                 timestamp: current_timestamp,
-                is_write: false,
+                event_type: MemoryEventType::ReadA,
             });
             let read_a_timestamp = current_timestamp;
             current_timestamp += 1;
@@ -123,7 +133,7 @@ impl SubleqState {
                 addr: instruction.b,
                 value: b_val,
                 timestamp: current_timestamp,
-                is_write: false,
+                event_type: MemoryEventType::ReadB,
             });
             let read_b_timestamp = current_timestamp;
             current_timestamp += 1;
@@ -158,7 +168,7 @@ impl SubleqState {
                 addr: instruction.b,
                 value: result,
                 timestamp: current_timestamp,
-                is_write: true,
+                event_type: MemoryEventType::Write,
             });
             current_timestamp += 1;
             
@@ -196,7 +206,7 @@ impl SubleqState {
             }
             
             // First access should be a write (initialization)
-            if !timeline[0].is_write {
+            if timeline[0].event_type != MemoryEventType::Write {
                 return Err(format!(
                     "Address {}: first access at timestamp {} is not a write",
                     addr, timeline[0].timestamp
@@ -206,7 +216,7 @@ impl SubleqState {
             let mut current_value = timeline[0].value;
             
             for access in &timeline[1..] {
-                if access.is_write {
+                if access.event_type == MemoryEventType::Write {
                     // Write can change the value
                     current_value = access.value;
                 } else {

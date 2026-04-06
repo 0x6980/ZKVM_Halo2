@@ -2,90 +2,10 @@ pub mod vm;
 pub mod circuit;
 pub mod memory_table;
 mod new_impl;
-
-use halo2_proofs::{
-    circuit::{Layouter, SimpleFloorPlanner},
-    plonk::{Circuit, ConstraintSystem, Error},
-};
-
-use crate::vm::TraceRow;
-use crate::circuit::{Field, SubleqChip, SubleqConfig};
-
-/// Main Subleq ZKVM Circuit
-#[derive(Default, Clone)]
-pub struct SubleqCircuit<F: Field> {
-    trace: Vec<TraceRow>,
-    initial_memory: Vec<i64>,
-    public_inputs: Vec<F>, // e.g., initial memory hash, final memory hash
-}
-
-impl<F: Field> SubleqCircuit<F> {
-    pub fn new(trace: Vec<TraceRow>, initial_memory: Vec<i64>, public_inputs: Vec<F>) -> Self {
-        Self { trace, initial_memory, public_inputs }
-    }
-}
-
-impl<F: Field> Circuit<F> for SubleqCircuit<F> {
-    type Config = SubleqConfig;
-    type FloorPlanner = SimpleFloorPlanner;
-    
-    fn without_witnesses(&self) -> Self {
-        Self::new(vec![], vec![], vec![])
-    }
-    
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        // Create advice columns
-        let pc = meta.advice_column();
-        let a = meta.advice_column();
-        let b = meta.advice_column();
-        let c = meta.advice_column();
-        let mem_a = meta.advice_column();
-        let mem_b_before = meta.advice_column();
-        let mem_b_after = meta.advice_column();
-        let next_pc = meta.advice_column();
-        let cond = meta.advice_column();
-        let step = meta.advice_column();
-        
-        // Fixed column for constants
-        let constants = meta.fixed_column();
-        
-        SubleqChip::configure(
-            meta,
-            pc, 
-            a, 
-            b, 
-            c,
-            mem_a, 
-            mem_b_before, 
-            mem_b_after,
-            next_pc,
-            cond,
-            step,
-            constants
-        )
-    }
-    
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        let chip = SubleqChip::new(config);
-        println!("{}", "synthesize!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        println!("{:?}", &self.initial_memory);
-        // Assign the trace
-        chip.assign_trace(layouter.namespace(|| "trace"), &self.trace, &self.initial_memory)?;
-        
-        // TODO: Add public input constraints (e.g., memory consistency)
-        
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vm::{SubleqVM, Instruction};
+    use crate::vm::{Instruction};
     use halo2_proofs::{dev::MockProver, halo2curves::pasta::Fp};
     
     type TestField = Fp;
