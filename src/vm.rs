@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 // ============================================================================
 // SUBLEQ Instruction Definition
 // ============================================================================
@@ -22,6 +20,7 @@ impl Instruction {
 // ============================================================================
 #[derive(Debug, Clone, PartialEq)]
 pub struct TraceRow {
+    // Instruction metadata
     pub pc: usize,              // Program counter
     pub inst_a: usize,          // Operand a
     pub inst_b: usize,          // Operand b
@@ -34,9 +33,34 @@ pub struct TraceRow {
 }
 
 // ============================================================================
+// Trace Row for Memory Access (one per memory event)
+// ============================================================================
+#[derive(Debug, Clone)]
+pub struct TraceAndMemoryAccessRow {
+    // Instruction metadata
+    pub pc: usize,                              // Program counter
+    pub inst_a: usize,                          // Operand a
+    pub inst_b: usize,                          // Operand b
+    pub inst_c: usize,                          // Operand c (jump target)
+    pub branch_taken: bool,                     // 1 if mem_b_after <= 0, else 0
+    pub new_pc: usize,                          // Next program counter
+    
+    // Memory access data
+    pub mem_addr: usize,
+    pub mem_value: i64,
+    pub mem_timestamp: usize,
+    
+    // Operation type
+    pub op_type: MemoryEventType,
+    
+    // Instruction ID (same for all 3 rows of same instruction)
+    pub inst_id: usize,
+}
+
+// ============================================================================
 // Memory Event for Permutation
 // ============================================================================
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum MemoryEventType {
     ReadA = 0,
     ReadB = 1,
@@ -65,7 +89,7 @@ pub struct SubleqState {
 }
 
 impl SubleqState {
-    pub fn new(program: Vec<Instruction>, memory_size: usize, max_steps: usize) -> Self {
+    pub fn new() -> Self {
         Self {
             pc: 0,
             memory: [0; 256],
@@ -80,7 +104,7 @@ impl SubleqState {
         program: &[Instruction],
         initial_memory: &[(usize, i64)],
         max_steps: usize,
-    ) -> Result<(Vec<TraceRow>, Vec<MemoryAccess>), String> {
+    ) -> Result<Vec<TraceAndMemoryAccessRow>, String> {
         let mut state = SubleqState {
             pc: 0,
             memory: [0; 256],
@@ -92,83 +116,83 @@ impl SubleqState {
                 state.memory[*addr] = *value;
             }
         }
-        
-        let mut trace = Vec::new();
-        let mut memory_accesses = Vec::new();
-        let mut current_timestamp = 0;
-        
-        // Record initial memory state (all non-zero values)
-        for (addr, value) in state.memory.iter().enumerate() {
-            if *value != 0 {
-                memory_accesses.push(MemoryAccess {
-                    addr,
-                    value: *value,
-                    timestamp: current_timestamp,
-                    event_type: MemoryEventType::Write,
-                });
-            }
-        }
-        current_timestamp += 1;
-        
+
         // Execute program
+        let mut trace_and_memory_access_rows = Vec::new();
+        let mut current_timestamp = 0;
         let mut steps = 0;
+
         while state.pc < program.len() * 3 && steps < max_steps {
             let inst_index = state.pc / 3;
             let instruction = program[inst_index];
             
             // Read operation for address a
             let a_val = state.memory[instruction.a];
-            memory_accesses.push(MemoryAccess {
-                addr: instruction.a,
-                value: a_val,
-                timestamp: current_timestamp,
-                event_type: MemoryEventType::ReadA,
-            });
-            let read_a_timestamp = current_timestamp;
-            current_timestamp += 1;
-            
+
             // Read operation for address b
             let b_val = state.memory[instruction.b];
-            memory_accesses.push(MemoryAccess {
-                addr: instruction.b,
-                value: b_val,
-                timestamp: current_timestamp,
-                event_type: MemoryEventType::ReadB,
-            });
-            let read_b_timestamp = current_timestamp;
-            current_timestamp += 1;
             
-            // Compute operation
+            // Write operation to address b
+            // let old_b_val = b_val;
             let result = b_val - a_val;
-            let branch_taken_val = if result <= 0 { 1 } else { 0 };
-            let new_pc = if branch_taken_val == 1 {
+
+            // Compute operation
+            let branch_taken_val = result <= 0;
+            let new_pc = if branch_taken_val {
                 instruction.c
             } else {
                 state.pc + 3
             };
-            
-            // Record trace
-            trace.push(TraceRow {
+
+            trace_and_memory_access_rows.push(TraceAndMemoryAccessRow {
                 pc: state.pc,
                 inst_a: instruction.a,
                 inst_b: instruction.b,
                 inst_c: instruction.c,
-                op_a_value: a_val,
-                op_b_value: b_val,
-                op_result: result,
                 branch_taken: branch_taken_val,
-                new_pc,
+                new_pc: new_pc,
+
+                mem_addr: instruction.a,
+                mem_value: a_val,
+                mem_timestamp: current_timestamp,
+                op_type: MemoryEventType::ReadA,
+
+                inst_id: steps,
             });
+            current_timestamp += 1;
             
-            // Write operation to address b
-            let old_b_val = b_val;
+            trace_and_memory_access_rows.push(TraceAndMemoryAccessRow {
+                pc: state.pc,
+                inst_a: instruction.a,
+                inst_b: instruction.b,
+                inst_c: instruction.c,
+                branch_taken: branch_taken_val,
+                new_pc: new_pc,
+
+                mem_addr: instruction.b,
+                mem_value: b_val,
+                mem_timestamp: current_timestamp,
+                op_type: MemoryEventType::ReadB,
+
+                inst_id: steps,
+            });
+            current_timestamp += 1;
             state.memory[instruction.b] = result;
             
-            memory_accesses.push(MemoryAccess {
-                addr: instruction.b,
-                value: result,
-                timestamp: current_timestamp,
-                event_type: MemoryEventType::Write,
+            trace_and_memory_access_rows.push(TraceAndMemoryAccessRow {
+                pc: state.pc,
+                inst_a: instruction.a,
+                inst_b: instruction.b,
+                inst_c: instruction.c,
+                branch_taken: branch_taken_val,
+                new_pc: new_pc,
+
+                mem_addr: instruction.b,
+                mem_value: result,
+                mem_timestamp: current_timestamp,
+                op_type: MemoryEventType::Write,
+
+                inst_id: steps,
             });
             current_timestamp += 1;
             
@@ -177,67 +201,8 @@ impl SubleqState {
             steps += 1;
         }
         
-        // Sort memory accesses by (addr, timestamp) for consistency checking
-        memory_accesses.sort_by_key(|ma| (ma.addr, ma.timestamp));
-        
-        // Verify memory consistency
-        self.verify_memory_consistency(&memory_accesses)?;
-        
-        Ok((trace, memory_accesses))
+        Ok(trace_and_memory_access_rows)
     }
-    
-    // ========================================================================
-    // Verify memory consistency (offline check)
-    // ========================================================================
-    fn verify_memory_consistency(
-        &self,
-        accesses: &[MemoryAccess],
-    ) -> Result<(), String> {
-        let mut by_addr: HashMap<usize, Vec<&MemoryAccess>> = HashMap::new();
-        
-        for access in accesses {
-            by_addr.entry(access.addr).or_default().push(access);
-        }
-        
-        for (addr, timeline) in by_addr {
-            // Timeline should already be sorted by timestamp
-            if timeline.is_empty() {
-                continue;
-            }
-            
-            // First access should be a write (initialization)
-            if timeline[0].event_type != MemoryEventType::Write {
-                return Err(format!(
-                    "Address {}: first access at timestamp {} is not a write",
-                    addr, timeline[0].timestamp
-                ));
-            }
-            
-            let mut current_value = timeline[0].value;
-            
-            for access in &timeline[1..] {
-                if access.event_type == MemoryEventType::Write {
-                    // Write can change the value
-                    current_value = access.value;
-                } else {
-                    // Read must get the current value
-                    if access.value != current_value {
-                        return Err(format!(
-                            "Address {}: read at timestamp {} expected {} but got {}",
-                            addr, access.timestamp, current_value, access.value
-                        ));
-                    }
-                }
-            }
-        }
-        
-        Ok(())
-    }
-
-    pub fn get_final_memory(&self) -> [i64; 256] {
-        self.memory.clone()
-    }
-    
 }
 
 // ============================================================================
