@@ -119,7 +119,7 @@ impl SubleqState {
 
         // Execute program
         let mut trace_and_memory_access_rows = Vec::new();
-        let mut current_timestamp = 0;
+        let mut current_timestamp = 1;
         let mut steps = 0;
 
         while state.pc < program.len() * 3 && steps < max_steps {

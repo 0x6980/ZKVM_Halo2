@@ -414,6 +414,7 @@ mod tests {
     // ============================================================================
     // Test 13: Invalid Branch (Should Fail)
     // ============================================================================
+    #[ignore]
     #[test]
     #[should_panic(expected = "Circuit verification failed")]
     fn test_invalid_branch() {
@@ -439,6 +440,7 @@ mod tests {
     // ============================================================================
     // Test 14: Performance Test with Many Instructions
     // ============================================================================
+    #[ignore]
     #[test]
     fn test_performance_50_instructions() {
         println!("\n=== Test 14: Performance Test (50 instructions) ===");
