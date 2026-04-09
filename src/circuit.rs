@@ -39,11 +39,12 @@ pub struct SubleqConfig {
 
     // ===== Validity =====
     pub is_valid: Column<Advice>,
-    pub memory_access_selector: Selector,
-    pub three_rows_selector: Selector,
+    pub memory_access_selector: Selector,  // select all rows of execution trace
     pub read_a_selector: Selector,
     pub read_b_selector: Selector,
     pub write_selector: Selector,
+    pub except_last_selector: Selector,   // select all rows except last row of execution trace
+
 
     // ===== PERMUTATION ARGUMENT for Memory Consistency =====
     // We create a permutation between:
@@ -61,7 +62,7 @@ pub struct SubleqConfig {
     pub memory_table: [TableColumn; 3],
     
     // Range checks
-    // pub addr_range: TableColumn,
+    pub addr_range: TableColumn,
     // pub value_range: TableColumn,
     
     // pub instance: Column<Instance>,
@@ -74,12 +75,13 @@ pub struct SubleqConfig {
 pub struct SubleqCircuit<F: PrimeField> {
     pub initial_memory: Vec<(usize, i64)>,
     pub trace_memory_accesses: Vec<TraceAndMemoryAccessRow>,
+    pub k: u32,
     pub _marker: PhantomData<F>,
 }
 
 impl<F: PrimeField> SubleqCircuit<F> {
-    pub fn new(initial_memory: Vec<(usize, i64)>, trace_memory_accesses: Vec<TraceAndMemoryAccessRow>) -> Self {
-        Self { initial_memory, trace_memory_accesses, _marker: PhantomData }
+    pub fn new(initial_memory: Vec<(usize, i64)>, trace_memory_accesses: Vec<TraceAndMemoryAccessRow>, k: u32) -> Self {
+        Self { initial_memory, trace_memory_accesses, k, _marker: PhantomData }
     }
 }
 
@@ -88,7 +90,7 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
-        Self::new(vec![], vec![])
+        Self::new(vec![], vec![], 0)
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
@@ -109,10 +111,11 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
         let is_valid = meta.advice_column();
 
         let memory_access_selector = meta.selector();
-        let three_rows_selector = meta.selector();
         let read_a_selector = meta.selector();
         let read_b_selector = meta.selector();
         let write_selector = meta.selector();
+        let except_last_selector = meta.selector();
+
         
         // Permutation columns
         let perm_addr = meta.advice_column();
@@ -133,7 +136,7 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
             meta.lookup_table_column(),
             meta.lookup_table_column(),
         ];
-        // let addr_range = meta.lookup_table_column();
+        let addr_range = meta.lookup_table_column();
         // let value_range = meta.lookup_table_column();
         
         // let instance = meta.instance_column();
@@ -158,30 +161,34 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
         // CONSTRAINT 2: Within same instruction, metadata must be consistent (3 rows with same instruction metadata)
         // ====================================================================
         meta.create_gate("same instruction metadata", |meta| {
-            let s = meta.query_selector(three_rows_selector);
+            let s = meta.query_selector(read_a_selector);
 
             let inst_id_cur = meta.query_advice(inst_id, Rotation::cur());
             let inst_id_next = meta.query_advice(inst_id, Rotation::next());
+            let inst_id_next2 = meta.query_advice(inst_id, Rotation(2));
             
             let pc_cur = meta.query_advice(pc, Rotation::cur());
             let pc_next = meta.query_advice(pc, Rotation::next());
+            let pc_next2 = meta.query_advice(pc, Rotation(2));
             
             let inst_a_cur = meta.query_advice(inst_a, Rotation::cur());
             let inst_a_next = meta.query_advice(inst_a, Rotation::next());
+            let inst_a_next2 = meta.query_advice(inst_a, Rotation(2));
             
             let inst_b_cur = meta.query_advice(inst_b, Rotation::cur());
             let inst_b_next = meta.query_advice(inst_b, Rotation::next());
+            let inst_b_next2 = meta.query_advice(inst_b, Rotation(2));
             
             let inst_c_cur = meta.query_advice(inst_c, Rotation::cur());
             let inst_c_next = meta.query_advice(inst_c, Rotation::next());
-            
-            let same_inst = inst_id_cur - inst_id_next;
+            let inst_c_next2 = meta.query_advice(inst_c, Rotation(2));
             
             vec![
-                s.clone() * (pc_cur - pc_next) * same_inst.clone(),
-                s.clone() * (inst_a_cur - inst_a_next) * same_inst.clone(),
-                s.clone() * (inst_b_cur - inst_b_next) * same_inst.clone(),
-                s * (inst_c_cur - inst_c_next) * same_inst,
+                s.clone() * (inst_id_cur - inst_id_next.clone()) * (inst_id_next - inst_id_next2),
+                s.clone() * (pc_cur - pc_next.clone()) * (pc_next - pc_next2),
+                s.clone() * (inst_a_cur - inst_a_next.clone()) * (inst_a_next - inst_a_next2),
+                s.clone() * (inst_b_cur - inst_b_next.clone()) * (inst_b_next - inst_b_next2),
+                s * (inst_c_cur - inst_c_next.clone()) * (inst_c_next - inst_c_next2),
             ]
         });
 
@@ -237,7 +244,7 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
         // CONSTRAINT 4: SUBLEQ arithmetic across the 3 rows
         // ====================================================================
         meta.create_gate("subleq arithmetic", |meta| {
-            let s = meta.query_selector(three_rows_selector);
+            let s = meta.query_selector(read_a_selector);
             
             let val_cur = meta.query_advice(mem_value, Rotation::cur());
             let val_next = meta.query_advice(mem_value, Rotation::next());
@@ -268,7 +275,7 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
         // CONSTRAINT 6: PC progression (using next instruction's first row)
         // ====================================================================
         meta.create_gate("pc progression", |meta| {
-            let s = meta.query_selector(three_rows_selector);
+            let s = meta.query_selector(read_a_selector);
 
             let pc_val = meta.query_advice(pc, Rotation::cur());
             let c_val = meta.query_advice(inst_c, Rotation::cur());
@@ -310,54 +317,60 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
         });
 
         // ====================================================================
-        // CONSTRAINT 8: Range checks
-        // ====================================================================
-        // meta.lookup("address range", |meta| {
-        //     let addr = meta.query_advice(mem_addr, Rotation::cur());
-        //     let valid = meta.query_advice(is_valid, Rotation::cur());
-        //     vec![(addr * valid, addr_range)]
-        // });
-        
-        // meta.lookup("value range", |meta| {
-        //     let value = meta.query_advice(mem_value, Rotation::cur());
-        //     let valid = meta.query_advice(is_valid, Rotation::cur());
-        //     vec![(value * valid, value_range)]
-        // });
-        
-        // ====================================================================
-        // CONSTRAINT 9: Timestamp monotonicity
+        // CONSTRAINT 8: Timestamp monotonicity
         // ====================================================================
         meta.create_gate("timestamp increases", |meta| {
-            let s = meta.query_selector(three_rows_selector);
+            let s = meta.query_selector(except_last_selector);
 
             let ts_cur = meta.query_advice(mem_timestamp, Rotation::cur());
             let ts_nex = meta.query_advice(mem_timestamp, Rotation::next());
-            let ts_nex2 = meta.query_advice(mem_timestamp, Rotation(2));
+            // let ts_nex2 = meta.query_advice(mem_timestamp, Rotation(2));
             
             vec![
                 s.clone() * (ts_nex.clone() - ts_cur - Expression::Constant(F::from(1u64))),
-                s * (ts_nex2 - ts_nex - Expression::Constant(F::from(1u64)))
+                // s * (ts_nex2 - ts_nex - Expression::Constant(F::from(1u64)))
             ]
         });
+
+        // ====================================================================
+        // CONSTRAINT 9: Range checks
+        // ====================================================================
+        meta.lookup("address range", |meta| {
+            let addr = meta.query_advice(mem_addr, Rotation::cur());
+            vec![(addr, addr_range)]
+        });
+        
+        // meta.lookup("value range", |meta| {
+        //     let value = meta.query_advice(mem_value, Rotation::cur());
+        //     vec![(value, value_range)]
+        // });
+        
+
         
         // Add writes to memory table
-        // meta.lookup("writes to memory table", |meta| {
-        //     let valid = meta.query_advice(is_valid, Rotation::cur());
-        //     let op = meta.query_advice(op_type, Rotation::cur());
-        //     let is_write = op - Expression::Constant(F::from(2u64));
+        meta.lookup("writes to memory table", |meta| {
+            let is_valid = meta.query_advice(is_valid, Rotation::cur());
+            let op = meta.query_advice(op_type, Rotation::cur());
+            // let is_write = Expression::Constant(F::from(2u64)) - op.clone();
             
-        //     let addr = meta.query_advice(perm_addr, Rotation::cur());
-        //     let value = meta.query_advice(perm_value, Rotation::cur());
-        //     let ts = meta.query_advice(perm_timestamp, Rotation::cur());
+            let addr = meta.query_advice(perm_addr, Rotation::cur());
+            let value = meta.query_advice(perm_value, Rotation::cur());
+            let ts = meta.query_advice(perm_timestamp, Rotation::cur());
             
-        //     let condition = is_write * valid;
-            
-        //     vec![
-        //         (addr * condition.clone(), memory_table[0]),
-        //         (value * condition.clone(), memory_table[1]),
-        //         (ts * condition, memory_table[2]),
-        //     ]
-        // });
+            let condition = Expression::Constant(F::ONE) * is_valid;
+            println!("{:?}", "11111111111111111111111111111111111111111111111111111111111111111111111111111");
+            println!("{:?}", op.clone());
+            println!("{:?}", memory_table[0]);
+            println!("{:?}", memory_table[1]);
+            println!("{:?}", memory_table[2]);
+            println!("{:?}", "11111111111111111111111111111111111111111111111111111111111111111111111111111");
+
+            vec![
+                (addr * condition.clone(), memory_table[0]),
+                (value * condition.clone(), memory_table[1]),
+                (ts * condition, memory_table[2]),
+            ]
+        });
         
         // Reads must exist in memory table
         // meta.lookup("reads from memory table", |meta| {
@@ -383,12 +396,12 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
             mem_addr, mem_value, mem_timestamp,
             op_type, inst_id, is_valid,
             memory_access_selector,
-            three_rows_selector,
             read_a_selector,
             read_b_selector,
             write_selector,
+            except_last_selector,
             perm_addr, perm_value, perm_timestamp, perm_op_type,
-            memory_table, // addr_range, value_range,
+            memory_table, addr_range, // value_range,
             // instance,
         }
     }
@@ -412,17 +425,17 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
         };
         
         // Load range tables
-        // layouter.assign_table(|| "address range", |mut table| {
-        //     for i in 0..256 {
-        //         table.assign_cell(
-        //             || format!("addr_{}", i),
-        //             config.addr_range,
-        //             i,
-        //             || Value::known(to_field_usize(i))
-        //         )?;
-        //     }
-        //     Ok(())
-        // })?;
+        layouter.assign_table(|| "address range", |mut table| {
+            for i in 0..256 {
+                table.assign_cell(
+                    || format!("addr_{}", i),
+                    config.addr_range,
+                    i,
+                    || Value::known(to_field_usize(i))
+                )?;
+            }
+            Ok(())
+        })?;
         
         // layouter.assign_table(|| "value range", |mut table| {
         //     for i in 0..65536 {
@@ -441,22 +454,26 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
         layouter.assign_table(|| "memory table", |mut table| {
             let mut idx = 0;
             
-            // Initial memory as writes at timestamp 0
-            for (addr, value) in &self.initial_memory {
-                table.assign_cell(|| "init_addr", config.memory_table[0], idx,
-                    || Value::known(to_field_usize(*addr)))?;
-                table.assign_cell(|| "init_value", config.memory_table[1], idx,
-                    || Value::known(to_field(*value)))?;
-                table.assign_cell(|| "init_timestamp", config.memory_table[2], idx,
-                    || Value::known(F::ZERO))?;
-                idx += 1;
-            }
+            // // Initial memory as writes at timestamp 0
+            // for (addr, value) in &self.initial_memory {
+            //     table.assign_cell(|| "write_addr", config.memory_table[0], idx,
+            //         || Value::known(to_field_usize(*addr)))?;
+            //     table.assign_cell(|| "write_value", config.memory_table[1], idx,
+            //         || Value::known(to_field(*value)))?;
+            //     table.assign_cell(|| "write_timestamp", config.memory_table[2], idx,
+            //         || Value::known(F::ZERO))?;
+            //     idx += 1;
+            // }
             
             // All write operations from trace
             for row in &self.trace_memory_accesses {
                 if row.op_type == MemoryEventType::Write {
+                    println!("{:?}", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                    println!("{:?}", (row.mem_addr, row.mem_value, row.mem_timestamp));
+                    println!("{:?}", idx);
+                    println!("{:?}", "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!11");
                     table.assign_cell(|| "write_addr", config.memory_table[0], idx,
-                        || Value::known(to_field_usize(row.mem_addr)))?;
+                        || Value::known(to_field_usize(1000)))?;
                     table.assign_cell(|| "write_value", config.memory_table[1], idx,
                         || Value::known(to_field(row.mem_value)))?;
                     table.assign_cell(|| "write_timestamp", config.memory_table[2], idx,
@@ -469,16 +486,22 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
         
         // Assign memory access rows
         layouter.assign_region(|| "memory accesses", |mut region| {
-            // config.memory_access_selector.enable(&mut region, 0)?;  // Optional: don't enable selector
-            // region.assign_advice(|| "is_valid", config.is_valid, 0, || Value::known(F::ZERO))?;
-
             for (idx, row) in self.trace_memory_accesses.iter().enumerate() {
             
+                // Enable selectors
                 config.memory_access_selector.enable(&mut region, idx)?;
-                if idx % 3 == 0 {
-                    config.three_rows_selector.enable(&mut region, idx)?;
+                if row.op_type == MemoryEventType::ReadA {
+                    config.read_a_selector.enable(&mut region, idx)?;
+                } else if row.op_type == MemoryEventType::ReadB {
+                    config.read_b_selector.enable(&mut region, idx)?;
+                } else if row.op_type == MemoryEventType::Write {
+                    config.write_selector.enable(&mut region, idx)?;
                 }
-                
+
+                if idx != self.trace_memory_accesses.len() - 1 {
+                    config.except_last_selector.enable(&mut region, idx)?;
+                }
+
                 // Instruction metadata
                 region.assign_advice(|| "pc", config.pc, idx,
                     || Value::known(to_field_usize(row.pc)))?;
@@ -504,13 +527,6 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
                 // Operation type and instruction ID
                 region.assign_advice(|| "op_type", config.op_type, idx,
                     || Value::known(to_field_usize(row.op_type as usize)))?;
-                if row.op_type == MemoryEventType::ReadA {
-                    config.read_a_selector.enable(&mut region, idx)?;
-                } else if row.op_type == MemoryEventType::ReadB {
-                    config.read_b_selector.enable(&mut region, idx)?;
-                } else {
-                    config.write_selector.enable(&mut region, idx)?;
-                }
                 region.assign_advice(|| "inst_id", config.inst_id, idx,
                     || Value::known(to_field_usize(row.inst_id)))?;
                 
@@ -532,6 +548,12 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
                 region.assign_advice(|| "perm_op_type", config.perm_op_type, idx,
                     || Value::known(to_field_usize(row.op_type as usize)))?;
             }
+            
+            let num_rows = 1 << self.k;
+            for idx in self.trace_memory_accesses.len()..num_rows -2 {
+                region.assign_advice(|| "is_valid", config.is_valid, idx, || Value::known(F::ZERO))?;
+            }
+
             Ok(())
         })?;
         

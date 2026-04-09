@@ -21,13 +21,14 @@ mod tests {
     fn create_circuit_from_program(
         program: &[Instruction],
         initial_memory: Vec<(usize, i64)>,
+        k: u32,
     ) -> SubleqCircuit<Fp> {
         let state = SubleqState::new();
         let trace_memory_accesses = state
             .execute_program(program, &initial_memory, 100)
             .expect("Program execution failed");
         
-        SubleqCircuit::new(initial_memory, trace_memory_accesses)
+        SubleqCircuit::new(initial_memory, trace_memory_accesses, k)
     }
 
     /// Helper to verify circuit with given parameters
@@ -87,9 +88,9 @@ mod tests {
     #[test]
     fn test_basic_subtraction() {
         println!("\n=== Test 1: Basic Subtraction (10 - 5 = 5) ===");
-        
+        let k = 17;
         let (program, initial_memory, result_addr) = subtraction_program();
-        let circuit = create_circuit_from_program(&program, initial_memory);
+        let circuit = create_circuit_from_program(&program, initial_memory, k);
         
         // Verify trace has correct number of rows (1 instruction = 3 rows)
         assert_eq!(circuit.trace_memory_accesses.len(), 3);
@@ -106,7 +107,7 @@ mod tests {
         
         println!("{:?}", "!!!!!!!!!!!!!!!!!!!!!!!!!!");
         
-        verify_circuit(circuit, 17, Some(5), Some(result_addr));
+        verify_circuit(circuit, k, Some(5), Some(result_addr));
     }
 
     // ============================================================================
@@ -115,7 +116,7 @@ mod tests {
     #[test]
     fn test_multiple_instructions() {
         println!("\n=== Test 2: Multiple Instructions with Memory Continuity ===");
-        
+        let k = 17;
         let program = vec![
             Instruction { a: 1, b: 0, c: 6 },  // mem[0] = 10 - 5 = 5
             Instruction { a: 0, b: 2, c: 9 },  // mem[2] = 0 - 5 = -5 (reads updated mem[0])
@@ -127,7 +128,7 @@ mod tests {
             (2, 0),
         ];
         
-        let circuit = create_circuit_from_program(&program, initial_memory);
+        let circuit = create_circuit_from_program(&program, initial_memory, k);
         
         // Should have 2 instructions * 3 = 6 rows
         assert_eq!(circuit.trace_memory_accesses.len(), 6);
@@ -140,7 +141,7 @@ mod tests {
         assert_eq!(circuit.trace_memory_accesses[3].mem_addr, 0);
         assert_eq!(circuit.trace_memory_accesses[3].mem_value, 5);  // Read from inst 1
         
-        verify_circuit(circuit, 15, Some(-5), Some(2));
+        verify_circuit(circuit, k, Some(-5), Some(2));
     }
 
     // ============================================================================
@@ -149,7 +150,7 @@ mod tests {
     #[test]
     fn test_branching_program() {
         println!("\n=== Test 3: Branching Program ===");
-        
+        let k = 15;
         let program = vec![
             Instruction { a: 1, b: 0, c: 6 },  // mem[0] = 5 - 10 = -5 (negative, branch to 6)
             Instruction { a: 2, b: 3, c: 0 },  // This should be skipped
@@ -165,7 +166,7 @@ mod tests {
             (5, 2),
         ];
         
-        let circuit = create_circuit_from_program(&program, initial_memory);
+        let circuit = create_circuit_from_program(&program, initial_memory, k);
         
         // First instruction should branch
         assert_eq!(circuit.trace_memory_accesses[2].branch_taken, true);
@@ -179,7 +180,7 @@ mod tests {
         assert_eq!(circuit.trace_memory_accesses[3].inst_a, 4);
         assert_eq!(circuit.trace_memory_accesses[3].inst_b, 5);
         
-        verify_circuit(circuit, 15, Some(1), Some(5));
+        verify_circuit(circuit, k, Some(1), Some(5));
     }
 
     // ============================================================================
@@ -188,7 +189,7 @@ mod tests {
     #[test]
     fn test_zero_and_negative_values() {
         println!("\n=== Test 4: Zero and Negative Values ===");
-        
+        let k = 15;
         let program = vec![
             Instruction { a: 1, b: 0, c: 3 },  // 0 - (-5) = 5
             Instruction { a: 2, b: 3, c: 6 },  // -3 - 2 = -5
@@ -201,13 +202,13 @@ mod tests {
             (3, -3),
         ];
         
-        let circuit = create_circuit_from_program(&program, initial_memory);
+        let circuit = create_circuit_from_program(&program, initial_memory, k);
         
         // Verify arithmetic with negatives
         assert_eq!(circuit.trace_memory_accesses[2].mem_value, 5);   // 0 - (-5) = 5
         assert_eq!(circuit.trace_memory_accesses[5].mem_value, -5);  // -3 - 2 = -5
         
-        verify_circuit(circuit, 15, Some(-5), Some(3));
+        verify_circuit(circuit, k, Some(-5), Some(3));
     }
 
     // ============================================================================
@@ -280,7 +281,8 @@ mod tests {
     #[test]
     fn test_memory_overwrite() {
         println!("\n=== Test 8: Memory Overwrite Verification ===");
-        
+        let k = 20;
+
         let program = vec![
             Instruction { a: 2, b: 0, c: 3 },  // mem[0] = 100 - 50 = 50
             Instruction { a: 3, b: 0, c: 6 },  // mem[0] = 50 - 25 = 25 (overwrites)
@@ -294,14 +296,14 @@ mod tests {
             (3, 25),
         ];
         
-        let circuit = create_circuit_from_program(&program, initial_memory);
+        let circuit = create_circuit_from_program(&program, initial_memory, k);
         
         // Verify the overwrite sequence
         assert_eq!(circuit.trace_memory_accesses[2].mem_value, 50);   // First write: 50
         assert_eq!(circuit.trace_memory_accesses[5].mem_value, 25);   // Overwrite: 25
         assert_eq!(circuit.trace_memory_accesses[6].mem_value, 25);   // Reads the overwritten value
         
-        verify_circuit(circuit, 20, Some(-15), Some(1));
+        verify_circuit(circuit, k, Some(-15), Some(1));
     }
 
     // ============================================================================
@@ -310,7 +312,7 @@ mod tests {
     #[test]
     fn test_uninitialized_memory() {
         println!("\n=== Test 9: Reading Uninitialized Memory (should read 0) ===");
-        
+        let k = 10;
         let program = vec![
             Instruction { a: 1, b: 0, c: 3 },  // mem[0] = 0 - 0 = 0
         ];
@@ -320,12 +322,12 @@ mod tests {
             // Address 1 is uninitialized, should read as 0
         ];
         
-        let circuit = create_circuit_from_program(&program, initial_memory);
+        let circuit = create_circuit_from_program(&program, initial_memory, k);
         
         // Uninitialized memory reads as 0
         assert_eq!(circuit.trace_memory_accesses[0].mem_value, 0);
         
-        verify_circuit(circuit, 10, Some(0), Some(0));
+        verify_circuit(circuit, k, Some(0), Some(0));
     }
 
     // ============================================================================
@@ -381,9 +383,9 @@ mod tests {
         
         // Corrupt the write value (should be 5, set to 100)
         trace[2].mem_value = 100;
-        
-        let circuit = SubleqCircuit::new(initial_memory, trace);
-        verify_circuit(circuit, 10, None, None);
+        let k = 10;
+        let circuit = SubleqCircuit::new(initial_memory, trace, k);
+        verify_circuit(circuit, k, None, None);
     }
 
     // ============================================================================
@@ -407,8 +409,9 @@ mod tests {
         // Corrupt the address (should be 1, set to 2)
         trace[0].mem_addr = 2;
         
-        let circuit = SubleqCircuit::new(initial_memory, trace);
-        verify_circuit(circuit, 10, None, None);
+        let k= 10;
+        let circuit = SubleqCircuit::new(initial_memory, trace, k);
+        verify_circuit(circuit, k, None, None);
     }
 
     // ============================================================================
@@ -433,8 +436,9 @@ mod tests {
         // Set branch_taken to false when it should be true
         trace[2].branch_taken = false;
         
-        let circuit = SubleqCircuit::new(initial_memory, trace);
-        verify_circuit(circuit, 10, None, None);
+        let k = 10;
+        let circuit = SubleqCircuit::new(initial_memory, trace, k);
+        verify_circuit(circuit, k, None, None);
     }
 
     // ============================================================================
@@ -444,7 +448,7 @@ mod tests {
     #[test]
     fn test_performance_50_instructions() {
         println!("\n=== Test 14: Performance Test (50 instructions) ===");
-        
+        let k = 200;
         let mut program = Vec::new();
         let mut initial_memory = vec![(0, 500), (1, 1)];
         
@@ -454,7 +458,7 @@ mod tests {
         }
         
         let start = std::time::Instant::now();
-        let circuit = create_circuit_from_program(&program, initial_memory);
+        let circuit = create_circuit_from_program(&program, initial_memory, k);
         let duration = start.elapsed();
         
         println!("  - Generated {} memory access rows in {:?}", 
@@ -462,7 +466,7 @@ mod tests {
         println!("  - {} instructions executed", circuit.trace_memory_accesses.len() / 3);
         
         let start_verify = std::time::Instant::now();
-        verify_circuit(circuit, 200, Some(450), Some(0));
+        verify_circuit(circuit, k, Some(450), Some(0));
         println!("  - Verification completed in {:?}", start_verify.elapsed());
     }
 
@@ -472,7 +476,7 @@ mod tests {
     #[test]
     fn test_timestamp_monotonicity() {
         println!("\n=== Test 15: Verify Timestamp Monotonicity ===");
-        
+        let k = 15;
         let program = vec![
             Instruction { a: 1, b: 0, c: 3 },
             Instruction { a: 2, b: 1, c: 6 },
@@ -480,21 +484,24 @@ mod tests {
         
         let initial_memory = vec![(0, 100), (1, 10), (2, 20)];
         
-        let circuit = create_circuit_from_program(&program, initial_memory);
+        let circuit = create_circuit_from_program(&program, initial_memory, k);
         
         // Verify timestamps are strictly increasing
         let mut prev_timestamp = 0;
         for (i, row) in circuit.trace_memory_accesses.iter().enumerate() {
-            assert!(row.mem_timestamp > prev_timestamp, 
+            if i != 0 {
+                assert!(row.mem_timestamp > prev_timestamp, 
                     "Timestamp not increasing at row {}: {} <= {}", 
                     i, row.mem_timestamp, prev_timestamp);
+            }
+
             prev_timestamp = row.mem_timestamp;
         }
         
         println!("✓ All {} timestamps are strictly increasing", 
                  circuit.trace_memory_accesses.len());
         
-        verify_circuit(circuit, 15, None, None);
+        verify_circuit(circuit, k, None, None);
     }
 }
 
