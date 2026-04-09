@@ -44,15 +44,15 @@ pub struct TraceAndMemoryAccessRow {
     pub inst_c: usize,                          // Operand c (jump target)
     pub branch_taken: bool,                     // 1 if mem_b_after <= 0, else 0
     pub new_pc: usize,                          // Next program counter
-    
+
     // Memory access data
     pub mem_addr: usize,
     pub mem_value: i64,
     pub mem_timestamp: usize,
-    
+
     // Operation type
     pub op_type: MemoryEventType,
-    
+
     // Instruction ID (same for all 3 rows of same instruction)
     pub inst_id: usize,
 }
@@ -109,7 +109,7 @@ impl SubleqState {
             pc: 0,
             memory: [0; 256],
         };
-        
+
         // Initialize memory
         for (addr, value) in initial_memory {
             if *addr < 256 {
@@ -125,13 +125,13 @@ impl SubleqState {
         while state.pc < program.len() * 3 && steps < max_steps {
             let inst_index = state.pc / 3;
             let instruction = program[inst_index];
-            
+
             // Read operation for address a
             let a_val = state.memory[instruction.a];
 
             // Read operation for address b
             let b_val = state.memory[instruction.b];
-            
+
             // Write operation to address b
             // let old_b_val = b_val;
             let result = b_val - a_val;
@@ -160,7 +160,7 @@ impl SubleqState {
                 inst_id: steps,
             });
             current_timestamp += 1;
-            
+
             trace_and_memory_access_rows.push(TraceAndMemoryAccessRow {
                 pc: state.pc,
                 inst_a: instruction.a,
@@ -178,7 +178,7 @@ impl SubleqState {
             });
             current_timestamp += 1;
             state.memory[instruction.b] = result;
-            
+
             trace_and_memory_access_rows.push(TraceAndMemoryAccessRow {
                 pc: state.pc,
                 inst_a: instruction.a,
@@ -195,12 +195,12 @@ impl SubleqState {
                 inst_id: steps,
             });
             current_timestamp += 1;
-            
+
             // Update PC
             state.pc = new_pc;
             steps += 1;
         }
-        
+
         Ok(trace_and_memory_access_rows)
     }
 }
@@ -215,14 +215,14 @@ pub fn subtraction_program() -> (Vec<Instruction>, Vec<(usize, i64)>, usize) {
         // Subtract memory[1] from memory[0], then stop
         Instruction { a: 1, b: 0, c: 3 },
     ];
-    
+
     let initial_memory = vec![
         (0, 10),  // Address 0: 10
         (1, 5),   // Address 1: 5
     ];
-    
+
     let result_addr = 0;  // Result stored at address 0
-    
+
     (program, initial_memory, result_addr)
 }
 
@@ -235,29 +235,29 @@ pub fn fibonacci_program() -> (Vec<Instruction>, Vec<(usize, i64)>, usize) {
     // 3: temporary storage
     // 4: constant 1 for decrement
     // 5: result address
-    
+
     let program = vec![
         // Copy f(n-1) to result
         Instruction { a: 2, b: 5, c: 0 },  // result = 0 - f(n-1)
         Instruction { a: 5, b: 5, c: 0 },  // result = -f(n-1) - (-f(n-1)) = 0
-        
+
         // Add f(n-2) to result
         Instruction { a: 1, b: 5, c: 0 },  // result = result - f(n-2)
         Instruction { a: 5, b: 5, c: 0 },  // result = -result? This is simplified
-        
+
         // Shift values: f(n-2) = f(n-1), f(n-1) = result
         Instruction { a: 2, b: 3, c: 0 },  // temp = -f(n-1)
         Instruction { a: 3, b: 1, c: 0 },  // f(n-2) = f(n-2) - (-f(n-1)) = f(n-2)+f(n-1)
         Instruction { a: 1, b: 2, c: 0 },  // f(n-1) = f(n-1) - f(n)
-        
+
         // Decrement counter
         Instruction { a: 4, b: 0, c: 0 },  // counter = counter - 1
-        
+
         // Loop if counter > 0
         Instruction { a: 0, b: 0, c: 8 },  // if counter <= 0, jump to end
         Instruction { a: 0, b: 0, c: 0 },  // else jump back to start
     ];
-    
+
     let initial_memory = vec![
         (0, 5),   // Counter: compute up to f(5)
         (1, 1),   // f(0) = 1
@@ -266,9 +266,9 @@ pub fn fibonacci_program() -> (Vec<Instruction>, Vec<(usize, i64)>, usize) {
         (4, 1),   // Constant 1
         (5, 0),   // Result
     ];
-    
+
     let result_addr = 5;
-    
+
     (program, initial_memory, result_addr)
 }
 
@@ -281,20 +281,20 @@ pub fn multiplication_program() -> (Vec<Instruction>, Vec<(usize, i64)>, usize) 
     // 2: result (0)
     // 3: counter (6)
     // 4: constant 1
-    
+
     let program = vec![
         // Loop: result = result + multiplicand
         Instruction { a: 1, b: 2, c: 0 },  // result = result - multiplicand
         Instruction { a: 2, b: 2, c: 0 },  // result = result - result = -multiplicand? This is simplified
-        
+
         // Decrement counter
         Instruction { a: 4, b: 3, c: 0 },  // counter = counter - 1
-        
+
         // Loop if counter > 0
         Instruction { a: 3, b: 3, c: 6 },  // if counter <= 0, jump to end
         Instruction { a: 0, b: 0, c: 0 },  // else jump back to start
     ];
-    
+
     let initial_memory = vec![
         (0, 6),   // Multiplier
         (1, 7),   // Multiplicand
@@ -302,8 +302,8 @@ pub fn multiplication_program() -> (Vec<Instruction>, Vec<(usize, i64)>, usize) 
         (3, 6),   // Counter
         (4, 1),   // Constant 1
     ];
-    
+
     let result_addr = 2;
-    
+
     (program, initial_memory, result_addr)
 }
