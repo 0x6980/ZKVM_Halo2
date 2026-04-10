@@ -177,24 +177,5 @@ Validates all memory addresses are within bounds (0-255) using table lookup.
 ### 10. Memory Table Lookup
 All write operations are added to the memory table for consistency verification.
 
-## Circuit Features
-
-### Zero-Knowledge Properties
-- **Completeness**: Honest execution traces satisfy all constraints
-- **Soundness**: Invalid executions cannot produce valid proofs
-- **Zero-Knowledge**: Proof reveals no information about the execution trace
-
-### Memory Model
-- **Fixed Memory**: 256 addressable cells
-- **Word Size**: 64-bit signed integers (mapped to field elements)
-- **Initial State**: Configurable initial memory values
-- **Temporal Ordering**: Global timestamps for all operations
-
-### Performance Optimizations
-- Single region for all memory access rows
-- Efficient selector-based constraint activation
-- Table-based range checking
-- Minimal advice columns through careful layout
-
 ## Usage
 See the tests.ir file.
