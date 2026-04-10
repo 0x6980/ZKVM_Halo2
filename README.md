@@ -1,3 +1,7 @@
+1. vm.rs
+2. circuit.rs
+3. tests.rs
+
 # vm.rs: SUBLEQ Virtual Machine with Execution Tracing
 
 A Rust implementation of a SUBLEQ (Subtract and Branch if Less than or Equal to Zero) virtual machine with comprehensive execution tracing and memory access logging capabilities.
