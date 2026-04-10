@@ -348,29 +348,29 @@ impl<F: PrimeField> Circuit<F> for SubleqCircuit<F> {
 
         
         // Add writes to memory table
-        meta.lookup("writes to memory table", |meta| {
-            let is_valid = meta.query_advice(is_valid, Rotation::cur());
-            let op = meta.query_advice(op_type, Rotation::cur());
-            // let is_write = Expression::Constant(F::from(2u64)) - op.clone();
+        // meta.lookup("writes to memory table", |meta| {
+        //     let is_valid = meta.query_advice(is_valid, Rotation::cur());
+        //     let op = meta.query_advice(op_type, Rotation::cur());
+        //     // let is_write = Expression::Constant(F::from(2u64)) - op.clone();
             
-            let addr = meta.query_advice(perm_addr, Rotation::cur());
-            let value = meta.query_advice(perm_value, Rotation::cur());
-            let ts = meta.query_advice(perm_timestamp, Rotation::cur());
+        //     let addr = meta.query_advice(perm_addr, Rotation::cur());
+        //     let value = meta.query_advice(perm_value, Rotation::cur());
+        //     let ts = meta.query_advice(perm_timestamp, Rotation::cur());
             
-            let condition = Expression::Constant(F::ONE) * is_valid;
-            println!("{:?}", "11111111111111111111111111111111111111111111111111111111111111111111111111111");
-            println!("{:?}", op.clone());
-            println!("{:?}", memory_table[0]);
-            println!("{:?}", memory_table[1]);
-            println!("{:?}", memory_table[2]);
-            println!("{:?}", "11111111111111111111111111111111111111111111111111111111111111111111111111111");
+        //     let condition = Expression::Constant(F::ONE) * is_valid;
+        //     println!("{:?}", "11111111111111111111111111111111111111111111111111111111111111111111111111111");
+        //     println!("{:?}", op.clone());
+        //     println!("{:?}", memory_table[0]);
+        //     println!("{:?}", memory_table[1]);
+        //     println!("{:?}", memory_table[2]);
+        //     println!("{:?}", "11111111111111111111111111111111111111111111111111111111111111111111111111111");
 
-            vec![
-                (addr * condition.clone(), memory_table[0]),
-                (value * condition.clone(), memory_table[1]),
-                (ts * condition, memory_table[2]),
-            ]
-        });
+        //     vec![
+        //         (addr * condition.clone(), memory_table[0]),
+        //         (value * condition.clone(), memory_table[1]),
+        //         (ts * condition, memory_table[2]),
+        //     ]
+        // });
         
         // Reads must exist in memory table
         // meta.lookup("reads from memory table", |meta| {
