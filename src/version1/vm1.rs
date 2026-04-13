@@ -71,7 +71,6 @@ impl SubleqState {
         }
         
         let mut trace = Vec::new();
-        let mut current_timestamp = 0;
         
         // Execute program
         let mut steps = 0;
