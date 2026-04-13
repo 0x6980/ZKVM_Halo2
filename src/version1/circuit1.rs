@@ -255,7 +255,7 @@ mod tests {
             .map(|row| row.op_result)
             .unwrap_or(0);
         
-        assert_eq!(final_result, -7000); // 1000 loops times to -7
+        assert_eq!(final_result, -7000); // 1000 loops, and in each loop, add -7 to the result.
     }
 
     #[test]
