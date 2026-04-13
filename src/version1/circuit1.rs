@@ -243,7 +243,7 @@ mod tests {
         
         let state = SubleqState::new(program.clone(), 256, 1000);
         let trace = state.execute_program(&program, &initial_memory, 1000).unwrap();
-        
+
         let circuit = SubleqCircuit::<TestField>::new(initial_memory, trace);
         let prover = MockProver::run(17, &circuit, vec![]).unwrap();
         prover.assert_satisfied();
@@ -255,7 +255,7 @@ mod tests {
             .map(|row| row.op_result)
             .unwrap_or(0);
         
-        assert_eq!(final_result, 42);
+        assert_eq!(final_result, -7000); // 1000 loops times to -7
     }
 
     #[test]
